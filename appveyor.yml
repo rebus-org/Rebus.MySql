@@ -2,6 +2,9 @@ image: Visual Studio 2017
 
 shallow_clone: true
 
+services:
+  - mysql
+  
 cache:
   - packages -> **\packages.config
   - '%LocalAppData%\NuGet\Cache'
