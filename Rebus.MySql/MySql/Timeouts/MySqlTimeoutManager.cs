@@ -7,6 +7,7 @@ using Rebus.Serialization;
 using Rebus.Timeouts;
 using Rebus.MySql.Extensions;
 using Rebus.Time;
+#pragma warning disable 1998
 
 namespace Rebus.MySql.Timeouts
 {

@@ -17,6 +17,7 @@ using Rebus.Threading;
 using Rebus.Transport;
 using Rebus.MySql.Extensions;
 using Rebus.Time;
+#pragma warning disable 1998
 
 namespace Rebus.MySql.Transport
 {
