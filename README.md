@@ -1,6 +1,6 @@
-# Rebus.TODO
+# Rebus.MySql
 
-[![install from nuget](https://img.shields.io/nuget/v/Rebus.TODO.svg?style=flat-square)](https://www.nuget.org/packages/Rebus.TODO)
+[![install from nuget](https://img.shields.io/nuget/v/Rebus.MySql.svg?style=flat-square)](https://www.nuget.org/packages/Rebus.MySql)
 
 Provides a MySql-based persistence for [Rebus](https://github.com/rebus-org/Rebus) for
 
