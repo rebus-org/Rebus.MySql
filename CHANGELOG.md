@@ -1,5 +1,9 @@
 # Changelog
 
-## 1.0.0
+## 1.0.0-b01
 
-* Initial version
+* Initial version - thanks [mvandevy]
+
+
+
+[mvandevy]: https://github.com/mvandevy

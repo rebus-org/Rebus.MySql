@@ -1,13 +1,14 @@
 using System;
-using Rebus.Config;
 using Rebus.Logging;
+using Rebus.MySql;
+using Rebus.MySql.Transport;
 using Rebus.Pipeline;
 using Rebus.Pipeline.Receive;
 using Rebus.Threading;
 using Rebus.Timeouts;
 using Rebus.Transport;
 
-namespace Rebus.MySql.Transport
+namespace Rebus.Config
 {
     /// <summary>
     /// Configuration extensions for the SQL transport

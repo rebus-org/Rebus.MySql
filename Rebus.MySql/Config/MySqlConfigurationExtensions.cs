@@ -1,6 +1,6 @@
 using Rebus.Auditing.Sagas;
-using Rebus.Config;
 using Rebus.Logging;
+using Rebus.MySql;
 using Rebus.MySql.Sagas;
 using Rebus.MySql.Subscriptions;
 using Rebus.MySql.Timeouts;
@@ -8,7 +8,7 @@ using Rebus.Sagas;
 using Rebus.Subscriptions;
 using Rebus.Timeouts;
 
-namespace Rebus.MySql
+namespace Rebus.Config
 {
     /// <summary>
     /// Configuration extensions for MySql persistence
