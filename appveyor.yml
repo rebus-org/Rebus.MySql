@@ -10,5 +10,5 @@ before_build:
   - appveyor-retry dotnet restore -v Minimal
 
 build_script:
-  - dotnet build Rebus.TODO -c Release 
-  - dotnet build Rebus.TODO.Tests -c Release 
+  - dotnet build Rebus.MySql -c Release 
+  - dotnet build Rebus.MySql.Tests -c Release 
