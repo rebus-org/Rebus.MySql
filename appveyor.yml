@@ -10,9 +10,9 @@ cache:
   - '%LocalAppData%\NuGet\Cache'
 
 install:
-  ps: - $env:MYSQL_PWD="Password12!"
-  ps: - $cmd = '"C:\Program Files\MySQL\MySQL Server 5.7\bin\mysql" -e "create database rebus2_test;" --user=root'
-  ps: - iex "& $cmd"
+  - ps: $env:MYSQL_PWD="Password12!"
+  - ps: $cmd = '"C:\Program Files\MySQL\MySQL Server 5.7\bin\mysql" -e "create database rebus2_test;" --user=root'
+  - ps: iex "& $cmd"
 
 environment:
   REBUS_MYSQL: Server=localhost;Database=rebus2_test;Uid=root;Pwd=Password12!;
