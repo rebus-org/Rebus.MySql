@@ -9,7 +9,7 @@ cache:
   - packages -> **\packages.config
   - '%LocalAppData%\NuGet\Cache'
 
-install:
+init:
   - ps: $env:MYSQL_PWD="Password12!"
   - ps: $cmd = '"C:\Program Files\MySQL\MySQL Server 5.7\bin\mysql" -e "create database rebus2_test;" --user=root'
   - ps: iex "& $cmd"
