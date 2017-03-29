@@ -14,7 +14,7 @@ environment:
 
 before_build:
   - SET MYSQL_PWD=Password12!
-  - "C:\Program Files\MySQL\MySQL Server 5.7\bin\mysql" -e "create database rebus2_test;" --user=root
+  - "C:\\Program Files\\MySQL\\MySQL Server 5.7\\bin\\mysql" -e "create database rebus2_test;" --user=root
   - appveyor-retry dotnet restore -v Minimal
 
 build_script:
