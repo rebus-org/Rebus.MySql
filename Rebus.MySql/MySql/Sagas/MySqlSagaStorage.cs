@@ -77,13 +77,13 @@ namespace Rebus.MySql.Sagas
                         command.Parameters.Add(command.CreateParameter("value", DbType.String, (propertyValue ?? "").ToString()));
                     }
 
-                    var data = (byte[]) await command.ExecuteScalarAsync();
+                    var data = (byte[])await command.ExecuteScalarAsync();
 
                     if (data == null) return null;
 
                     try
                     {
-                        var sagaData = (ISagaData) _objectSerializer.Deserialize(data);
+                        var sagaData = (ISagaData)_objectSerializer.Deserialize(data);
 
                         if (!sagaDataType.GetTypeInfo().IsInstanceOfType(sagaData))
                         {
@@ -258,7 +258,7 @@ namespace Rebus.MySql.Sagas
                                 WHERE `saga_id` = @id
 
                             ";
-                    command.Parameters.Add( command.CreateParameter("id", DbType.Guid, sagaData.Id));
+                    command.Parameters.Add(command.CreateParameter("id", DbType.Guid, sagaData.Id));
 
                     await command.ExecuteNonQueryAsync();
                 }
@@ -396,8 +396,19 @@ namespace Rebus.MySql.Sagas
 
                 command.Parameters.Add(command.CreateParameter("saga_type", DbType.String, sagaTypeName));
                 command.Parameters.Add(command.CreateParameter("saga_id", DbType.Guid, sagaData.Id));
+                try
+                {
+                    await command.ExecuteNonQueryAsync();
+                }
+                catch (MySqlException exception)
+                {
+                    if (exception.Number == MySqlServerMagic.PrimaryKeyViolationNumber)
+                    {
+                        throw new ConcurrencyException(exception, $"Saga data {sagaData.GetType()} with ID {sagaData.Id} in table {_dataTableName} could not be inserted!");
+                    }
+                    throw;
+                }
 
-                await command.ExecuteNonQueryAsync();
             }
         }
     }
