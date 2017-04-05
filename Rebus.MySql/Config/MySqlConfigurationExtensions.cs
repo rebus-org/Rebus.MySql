@@ -33,7 +33,9 @@ namespace Rebus.Config
 
                 if (automaticallyCreateTables)
                 {
-                    subscriptionStorage.EnsureTableIsCreated().RunSynchronously();
+                    var createTableTask = subscriptionStorage.EnsureTableIsCreated();
+                    createTableTask.Wait(); // wait at least 1min to make sure the tables are correctly created.
+                    if (createTableTask.Exception != null) throw createTableTask.Exception;
                 }
 
                 return subscriptionStorage;
