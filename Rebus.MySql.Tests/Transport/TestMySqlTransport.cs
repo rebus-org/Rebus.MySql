@@ -43,19 +43,19 @@ namespace Rebus.MySql.Tests.Transport
         [Test]
         public async Task ReceivesSentMessageWhenTransactionIsCommitted()
         {
-            using (var context = new DefaultTransactionContextScope())
+            using (var scope = new RebusTransactionScope())
             {
                 await _transport.Send(QueueName, RecognizableMessage(), AmbientTransactionContext.Current);
 
-                await context.Complete();
+                await scope.CompleteAsync();
             }
 
             TransportMessage transportMessage;
-            using (var context = new DefaultTransactionContextScope())
+            using (var scope = new RebusTransactionScope())
             {
                 transportMessage = await _transport.Receive(AmbientTransactionContext.Current, _cancellationToken);
 
-                await context.Complete();
+                await scope.CompleteAsync();
             }
 
             AssertMessageIsRecognized(transportMessage);
@@ -64,10 +64,10 @@ namespace Rebus.MySql.Tests.Transport
         [Test]
         public async Task CommitSentMessageToStorage()
         {
-            using (var context = new DefaultTransactionContextScope())
+            using (var scope = new RebusTransactionScope())
             {
                 await _transport.Send(QueueName, RecognizableMessage(), AmbientTransactionContext.Current);
-                await context.Complete();
+                await scope.CompleteAsync();
             }
 
             Assert.That(true, Is.True);
@@ -76,14 +76,14 @@ namespace Rebus.MySql.Tests.Transport
        [Test]
         public async Task DoesNotReceiveSentMessageWhenTransactionIsNotCommitted()
         {
-            using (var context = new DefaultTransactionContextScope())
+            using (var scope = new RebusTransactionScope())
             {
                 await _transport.Send(QueueName, RecognizableMessage(), AmbientTransactionContext.Current);
 
                 //await context.Complete();
             }
 
-            using (var context = new DefaultTransactionContextScope())
+            using (var scope = new RebusTransactionScope())
             {
                 var transportMessage = await _transport.Receive(AmbientTransactionContext.Current, _cancellationToken);
 
@@ -103,10 +103,10 @@ namespace Rebus.MySql.Tests.Transport
             await Task.WhenAll(Enumerable.Range(0, numberOfMessages)
                 .Select(async i =>
                 {
-                    using (var context = new DefaultTransactionContextScope())
+                    using (var scope = new RebusTransactionScope())
                     {
                         await _transport.Send(QueueName, RecognizableMessage(i), AmbientTransactionContext.Current);
-                        await context.Complete();
+                        await scope.CompleteAsync();
 
                         messageIds[i] = 0;
                     }
@@ -121,10 +121,10 @@ namespace Rebus.MySql.Tests.Transport
                 await Task.WhenAll(Enumerable.Range(0, numberOfMessages)
                     .Select(async i =>
                     {
-                        using (var context = new DefaultTransactionContextScope())
+                        using (var scope = new RebusTransactionScope())
                         {
                             var msg = await _transport.Receive(AmbientTransactionContext.Current, _cancellationToken);
-                            await context.Complete();
+                            await scope.CompleteAsync();
 
                             Interlocked.Increment(ref receivedMessages);
 
