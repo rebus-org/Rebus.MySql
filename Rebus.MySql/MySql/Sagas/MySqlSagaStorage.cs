@@ -265,6 +265,8 @@ namespace Rebus.MySql.Sagas
 
                 connection.Complete();
             }
+
+            sagaData.Revision++;
         }
 
         /// <summary>
