@@ -10,7 +10,7 @@ cache:
   - '%LocalAppData%\NuGet\Cache'
 
 environment:
-  REBUS_MYSQL: Server=localhost;Database=rebus2_test;Uid=root;Pwd=Password12!;
+  REBUS_MYSQL: Server=localhost;Database=rebus2_test;Uid=root;Pwd=Password12!;sslmode=none;
 
 before_build:
   - ps: $env:MYSQL_PWD="Password12!"
