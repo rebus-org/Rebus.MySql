@@ -5,7 +5,7 @@
     <AppDesignerFolder>Properties</AppDesignerFolder>
     <RootNamespace>Rebus.MySql.Tests</RootNamespace>
     <AssemblyName>Rebus.MySql.Tests</AssemblyName>
-    <TargetFrameworks>netstandard1.6</TargetFrameworks>
+    <TargetFrameworks>net452;netstandard1.6</TargetFrameworks>
     <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
