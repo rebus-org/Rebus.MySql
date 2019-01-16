@@ -10,13 +10,13 @@ namespace Rebus.MySql.Extensions
 
             using (var command = connection.CreateCommand())
             {
-                command.CommandText = "select * from information_schema.tables where table_schema not in ('pg_catalog', 'information_schema')";
+                command.CommandText = "show tables";
 
                 using (var reader = command.ExecuteReader())
                 {
                     while (reader.Read())
                     {
-                        tableNames.Add(reader["table_name"].ToString());
+                        tableNames.Add(reader[0].ToString());
                     }
                 }
             }
