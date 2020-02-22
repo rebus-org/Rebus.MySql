@@ -1,3 +1,4 @@
+using System;
 using NUnit.Framework;
 using Rebus.Logging;
 using Rebus.MySql.Timeouts;
@@ -13,6 +14,8 @@ namespace Rebus.MySql.Tests.Timeouts
 
     public class MySqlTimeoutManagerFactory : ITimeoutManagerFactory
     {
+        readonly FakeRebusTime _fakeRebusTime = new FakeRebusTime();
+
         public MySqlTimeoutManagerFactory()
         {
             //MySqlTestHelper.DropTableIfExists("timeouts");
@@ -20,8 +23,8 @@ namespace Rebus.MySql.Tests.Timeouts
 
         public ITimeoutManager Create()
         {
-            var timeoutManager = new MySqlTimeoutManager(MySqlTestHelper.ConnectionHelper, "timeouts", new ConsoleLoggerFactory(false));
-            timeoutManager.EnsureTableIsCreated();
+            var timeoutManager = new MySqlTimeoutManager(MySqlTestHelper.ConnectionHelper, "timeouts", new ConsoleLoggerFactory(false), _fakeRebusTime);
+            AsyncHelpers.RunSync(() => timeoutManager.EnsureTableIsCreated());
             return timeoutManager;
         }
 
@@ -34,6 +37,10 @@ namespace Rebus.MySql.Tests.Timeouts
         {
             return "could not provide debug info for this particular timeout manager.... implement if needed :)";
         }
-    }
 
+        public void FakeIt(DateTimeOffset fakeTime)
+        {
+            _fakeRebusTime.SetNow(fakeTime);
+        }
+    }
 }

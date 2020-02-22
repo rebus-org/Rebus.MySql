@@ -8,6 +8,7 @@ using NUnit.Framework;
 using Rebus.Extensions;
 using Rebus.Logging;
 using Rebus.Messages;
+using Rebus.MySql.Tests.Timeouts;
 using Rebus.MySql.Transport;
 using Rebus.Tests.Contracts;
 using Rebus.Threading.TaskParallelLibrary;
@@ -18,10 +19,10 @@ namespace Rebus.MySql.Tests.Transport
     [TestFixture, Category(Categories.MySql)]
     public class TestMySqlTransport : FixtureBase
     {
-        private readonly string _tableName = "messages" + TestConfig.Suffix;
-        private MySqlTransport _transport;
-        private CancellationToken _cancellationToken;
-        private const string QueueName = "input";
+        readonly string _tableName = "messages" + TestConfig.Suffix;
+        MySqlTransport _transport;
+        CancellationToken _cancellationToken;
+        const string QueueName = "input";
 
         [SetUp]
         protected override void SetUp()
@@ -30,7 +31,7 @@ namespace Rebus.MySql.Tests.Transport
             var consoleLoggerFactory = new ConsoleLoggerFactory(false);
             var asyncTaskFactory = new TplAsyncTaskFactory(consoleLoggerFactory);
             var connectionHelper = new MySqlConnectionHelper(MySqlTestHelper.ConnectionString);
-            _transport = new MySqlTransport(connectionHelper, _tableName, QueueName, consoleLoggerFactory,asyncTaskFactory );
+            _transport = new MySqlTransport(connectionHelper, _tableName, QueueName, consoleLoggerFactory, asyncTaskFactory, new FakeRebusTime());
             _transport.EnsureTableIsCreated();
 
             Using(_transport);
@@ -73,7 +74,7 @@ namespace Rebus.MySql.Tests.Transport
             Assert.That(true, Is.True);
         }
 
-       [Test]
+        [Test]
         public async Task DoesNotReceiveSentMessageWhenTransactionIsNotCommitted()
         {
             using (var scope = new RebusTransactionScope())
@@ -114,9 +115,10 @@ namespace Rebus.MySql.Tests.Transport
 
             Console.WriteLine("Receiving {0} messages", numberOfMessages);
 
-            using (var timer = new Timer((object o) => {
-                    Console.WriteLine("Received: {0} msgs", receivedMessages);
-                    }, null, TimeSpan.FromMilliseconds(1000), TimeSpan.FromMilliseconds(1000)))
+            using (var timer = new Timer((object o) =>
+            {
+                Console.WriteLine("Received: {0} msgs", receivedMessages);
+            }, null, TimeSpan.FromMilliseconds(1000), TimeSpan.FromMilliseconds(1000)))
             {
                 await Task.WhenAll(Enumerable.Range(0, numberOfMessages)
                     .Select(async i =>
@@ -149,7 +151,7 @@ namespace Rebus.MySql.Tests.Transport
             }
         }
 
-         void AssertMessageIsRecognized(TransportMessage transportMessage)
+        void AssertMessageIsRecognized(TransportMessage transportMessage)
         {
             Assert.That(transportMessage, Is.Not.Null);
             Assert.That(transportMessage.Headers.GetValue("recognizzle"), Is.EqualTo("hej"));

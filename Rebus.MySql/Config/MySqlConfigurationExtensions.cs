@@ -6,6 +6,7 @@ using Rebus.MySql.Subscriptions;
 using Rebus.MySql.Timeouts;
 using Rebus.Sagas;
 using Rebus.Subscriptions;
+using Rebus.Time;
 using Rebus.Timeouts;
 
 namespace Rebus.Config
@@ -50,7 +51,8 @@ namespace Rebus.Config
             configurer.Register(c =>
             {
                 var rebusLoggerFactory = c.Get<IRebusLoggerFactory>();
-                var subscriptionStorage = new MySqlTimeoutManager(new MySqlConnectionHelper(connectionString), tableName, rebusLoggerFactory);
+                var rebusTime = c.Get<IRebusTime>();
+                var subscriptionStorage = new MySqlTimeoutManager(new MySqlConnectionHelper(connectionString), tableName, rebusLoggerFactory, rebusTime);
 
                 if (automaticallyCreateTables)
                 {

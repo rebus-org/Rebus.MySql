@@ -5,6 +5,7 @@ using Rebus.MySql.Transport;
 using Rebus.Pipeline;
 using Rebus.Pipeline.Receive;
 using Rebus.Threading;
+using Rebus.Time;
 using Rebus.Timeouts;
 using Rebus.Transport;
 
@@ -44,7 +45,8 @@ namespace Rebus.Config
                 var rebusLoggerFactory = context.Get<IRebusLoggerFactory>();
                 var asyncTaskFactory = context.Get<IAsyncTaskFactory>();
                 var connectionProvider = connectionProviderFactory(rebusLoggerFactory);
-                var transport = new MySqlTransport(connectionProvider, tableName, inputQueueName, rebusLoggerFactory, asyncTaskFactory);
+                var rebusTime = context.Get<IRebusTime>();
+                var transport = new MySqlTransport(connectionProvider, tableName, inputQueueName, rebusLoggerFactory, asyncTaskFactory, rebusTime);
                 transport.EnsureTableIsCreated();
                 return transport;
             });

@@ -26,12 +26,18 @@ namespace Rebus.MySql.Transport
     /// </summary>
     public class MySqlTransport : ITransport, IInitializable, IDisposable
     {
-        private readonly MySqlConnectionHelper _connectionHelper;
-        private readonly string _tableName;
-        private readonly string _inputQueueName;
-        private readonly IAsyncTaskFactory _asyncTaskFactory;
+        const int OperationCancelledNumber = 3980;
+
+        static readonly HeaderSerializer HeaderSerializer = new HeaderSerializer();
+        
+        readonly MySqlConnectionHelper _connectionHelper;
+        readonly string _tableName;
+        readonly string _inputQueueName;
+        readonly IAsyncTaskFactory _asyncTaskFactory;
+        readonly IRebusTime _rebusTime;
+        readonly ILog _log;
+        
         bool _disposed;
-        private readonly ILog _log;
 
         /// <summary>
         /// The connection key used to connect to the transport database.
@@ -41,15 +47,14 @@ namespace Rebus.MySql.Transport
         /// Header key used to signal the priority of a header.
         /// </summary>
         public const string MessagePriorityHeaderKey = "rbs2-msg-priority";
-        static readonly HeaderSerializer HeaderSerializer = new HeaderSerializer();
+
         /// <summary>
         /// Default interval after which a nessage is considered as expired.
         /// </summary>
         public static readonly TimeSpan DefaultExpiredMessagesCleanupInterval = TimeSpan.FromSeconds(20);
 
         readonly AsyncBottleneck _bottleneck = new AsyncBottleneck(20);
-        const int OperationCancelledNumber = 3980;
-        private readonly IAsyncTask _expiredMessagesCleanupTask;
+        readonly IAsyncTask _expiredMessagesCleanupTask;
 
         /// <summary>
         /// Interval after which messages are considered expired.
@@ -64,12 +69,14 @@ namespace Rebus.MySql.Transport
         /// <param name="inputQueueName">The name of the queue on which messages are received.</param>
         /// <param name="rebusLoggerFactory"></param>
         /// <param name="asyncTaskFactory"></param>
-        public MySqlTransport(MySqlConnectionHelper connectionHelper, string tableName, string inputQueueName, IRebusLoggerFactory rebusLoggerFactory, IAsyncTaskFactory asyncTaskFactory)
+        public MySqlTransport(MySqlConnectionHelper connectionHelper, string tableName, string inputQueueName, IRebusLoggerFactory rebusLoggerFactory, IAsyncTaskFactory asyncTaskFactory, IRebusTime rebusTime)
         {
+            if (rebusLoggerFactory == null) throw new ArgumentNullException(nameof(rebusLoggerFactory));
             _connectionHelper = connectionHelper;
             _tableName = tableName;
             _inputQueueName = inputQueueName;
-            _asyncTaskFactory = asyncTaskFactory;
+            _asyncTaskFactory = asyncTaskFactory ?? throw new ArgumentNullException(nameof(asyncTaskFactory));
+            _rebusTime = rebusTime ?? throw new ArgumentNullException(nameof(rebusTime));
             ExpiredMessagesCleanupInterval = DefaultExpiredMessagesCleanupInterval;
             _expiredMessagesCleanupTask = asyncTaskFactory.Create("ExpiredMessagesCleanup",
                 PerformExpiredMessagesCleanupCycle, intervalSeconds: 60);
@@ -341,8 +348,8 @@ DELETE FROM {_tableName} WHERE process_id = @processId;";
                 .GetOrAdd(CurrentConnectionKey, () =>
                     {
                         var dbConnection =  _connectionHelper.GetConnection().Result;
-                        context.OnCommitted(async () => dbConnection.Complete());
-                        context.OnDisposed(() =>
+                        context.OnCommitted(async ctx => dbConnection.Complete());
+                        context.OnDisposed(ctx =>
                         {
                             dbConnection.Dispose();
                         });
@@ -365,11 +372,9 @@ DELETE FROM {_tableName} WHERE process_id = @processId;";
             }
         }
 
-        static int GetInitialVisibilityDelay(IDictionary<string, string> headers)
+        int GetInitialVisibilityDelay(IDictionary<string, string> headers)
         {
-            string deferredUntilDateTimeOffsetString;
-
-            if (!headers.TryGetValue(Headers.DeferredUntil, out deferredUntilDateTimeOffsetString))
+            if (!headers.TryGetValue(Headers.DeferredUntil, out var deferredUntilDateTimeOffsetString))
             {
                 return -1;
             }
@@ -378,7 +383,7 @@ DELETE FROM {_tableName} WHERE process_id = @processId;";
 
             headers.Remove(Headers.DeferredUntil);
 
-            return (int)(deferredUntilTime - RebusTime.Now).TotalSeconds;
+            return (int)(deferredUntilTime - _rebusTime.Now).TotalSeconds;
         }
 
         static int GetTtlSeconds(IReadOnlyDictionary<string, string> headers)

@@ -16,21 +16,21 @@ namespace Rebus.MySql.Timeouts
     /// </summary>
     public class MySqlTimeoutManager : ITimeoutManager
     {
-        private readonly DictionarySerializer _dictionarySerializer = new DictionarySerializer();
-        private readonly MySqlConnectionHelper _connectionHelper;
-        private readonly string _tableName;
-        private readonly ILog _log;
+        readonly DictionarySerializer _dictionarySerializer = new DictionarySerializer();
+        readonly MySqlConnectionHelper _connectionHelper;
+        readonly string _tableName;
+        readonly IRebusTime _rebusTime;
+        readonly ILog _log;
 
         /// <summary>
         /// Constructs the timeout manager
         /// </summary>
-        public MySqlTimeoutManager(MySqlConnectionHelper connectionHelper, string tableName, IRebusLoggerFactory rebusLoggerFactory)
+        public MySqlTimeoutManager(MySqlConnectionHelper connectionHelper, string tableName, IRebusLoggerFactory rebusLoggerFactory, IRebusTime rebusTime)
         {
-            if (connectionHelper == null) throw new ArgumentNullException(nameof(connectionHelper));
-            if (tableName == null) throw new ArgumentNullException(nameof(tableName));
             if (rebusLoggerFactory == null) throw new ArgumentNullException(nameof(rebusLoggerFactory));
-            _connectionHelper = connectionHelper;
-            _tableName = tableName;
+            _connectionHelper = connectionHelper ?? throw new ArgumentNullException(nameof(connectionHelper));
+            _tableName = tableName ?? throw new ArgumentNullException(nameof(tableName));
+            _rebusTime = rebusTime ?? throw new ArgumentNullException(nameof(rebusTime));
             _log = rebusLoggerFactory.GetLogger<MySqlTimeoutManager>();
         }
 
@@ -75,7 +75,7 @@ namespace Rebus.MySql.Timeouts
                             WHERE `due_time` <= @current_time
                             ORDER BY `due_time`
                             FOR UPDATE;";
-                    command.Parameters.Add(command.CreateParameter("current_time", DbType.DateTime, RebusTime.Now.ToUniversalTime().DateTime));
+                    command.Parameters.Add(command.CreateParameter("current_time", DbType.DateTime, _rebusTime.Now.ToUniversalTime().DateTime));
 
                     using (var reader = await command.ExecuteReaderAsync())
                     {

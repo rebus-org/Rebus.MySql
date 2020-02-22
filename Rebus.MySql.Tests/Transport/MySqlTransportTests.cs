@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using NUnit.Framework;
 using Rebus.Extensions;
 using Rebus.Logging;
+using Rebus.MySql.Tests.Timeouts;
 using Rebus.MySql.Transport;
 using Rebus.Tests.Contracts;
 using Rebus.Tests.Contracts.Transports;
@@ -33,7 +34,7 @@ namespace Rebus.MySql.Tests.Transport
             var consoleLoggerFactory = new ConsoleLoggerFactory(false);
             var connectionHelper = new MySqlConnectionHelper(MySqlTestHelper.ConnectionString);
             var asyncTaskFactory = new TplAsyncTaskFactory(consoleLoggerFactory);
-            var transport = new MySqlTransport(connectionHelper, tableName, null, consoleLoggerFactory, asyncTaskFactory);
+            var transport = new MySqlTransport(connectionHelper, tableName, null, consoleLoggerFactory, asyncTaskFactory, new FakeRebusTime());
 
             _disposables.Add(transport);
 
@@ -52,7 +53,7 @@ namespace Rebus.MySql.Tests.Transport
             var consoleLoggerFactory = new ConsoleLoggerFactory(false);
             var connectionHelper = new MySqlConnectionHelper(MySqlTestHelper.ConnectionString);
             var asyncTaskFactory = new TplAsyncTaskFactory(consoleLoggerFactory);
-            var transport = new MySqlTransport(connectionHelper, tableName, inputQueueAddress, consoleLoggerFactory, asyncTaskFactory);
+            var transport = new MySqlTransport(connectionHelper, tableName, inputQueueAddress, consoleLoggerFactory, asyncTaskFactory, new FakeRebusTime());
 
             _disposables.Add(transport);
 

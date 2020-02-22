@@ -14,6 +14,9 @@
 ## 1.1.2
 * Remove misleading parameter names
 
+## 2.0.0
+* Update to Rebus 6
+
 [mvandevy]: https://github.com/mvandevy
 [renemadsen]: https://github.com/renemadsen
 [robvanpamel]: https://github.com/robvanpamel
