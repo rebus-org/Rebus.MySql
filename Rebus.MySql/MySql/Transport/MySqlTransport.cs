@@ -64,11 +64,6 @@ namespace Rebus.MySql.Transport
         /// <summary>
         /// Constructs a MySql transport.
         /// </summary>
-        /// <param name="connectionHelper"></param>
-        /// <param name="tableName">The name of the table used as the transport.</param>
-        /// <param name="inputQueueName">The name of the queue on which messages are received.</param>
-        /// <param name="rebusLoggerFactory"></param>
-        /// <param name="asyncTaskFactory"></param>
         public MySqlTransport(MySqlConnectionHelper connectionHelper, string tableName, string inputQueueName, IRebusLoggerFactory rebusLoggerFactory, IAsyncTaskFactory asyncTaskFactory, IRebusTime rebusTime)
         {
             if (rebusLoggerFactory == null) throw new ArgumentNullException(nameof(rebusLoggerFactory));
