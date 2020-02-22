@@ -6,7 +6,6 @@ using System.Reflection;
 using System.Threading.Tasks;
 using MySql.Data.MySqlClient;
 using Rebus.Exceptions;
-using Rebus.Extensions;
 using Rebus.Logging;
 using Rebus.Sagas;
 using Rebus.Serialization;
@@ -277,7 +276,7 @@ namespace Rebus.MySql.Sagas
         {
             using (var connection = await _connectionHelper.GetConnection())
             {
-                var tableNames = connection.GetTableNames().ToHashSet();
+                var tableNames = connection.GetTableNames();
 
                 var hasDataTable = tableNames.Contains(_dataTableName);
                 var hasIndexTable = tableNames.Contains(_indexTableName);

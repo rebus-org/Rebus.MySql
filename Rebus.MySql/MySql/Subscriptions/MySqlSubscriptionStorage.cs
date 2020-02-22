@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.Data;
 using System.Threading.Tasks;
 using MySql.Data.MySqlClient;
-using Rebus.Extensions;
 using Rebus.Logging;
 using Rebus.Subscriptions;
 using Rebus.MySql.Extensions;
@@ -130,7 +129,7 @@ namespace Rebus.MySql.Subscriptions
         {
             using (var connection = await _connectionHelper.GetConnection())
             {
-                var tableNames = connection.GetTableNames().ToHashSet();
+                var tableNames = connection.GetTableNames();
 
                 if (tableNames.Contains(_tableName)) return;
 

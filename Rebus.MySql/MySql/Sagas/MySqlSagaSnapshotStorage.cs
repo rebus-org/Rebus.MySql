@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.Data;
 using System.Threading.Tasks;
 using Rebus.Auditing.Sagas;
-using Rebus.Extensions;
 using Rebus.Sagas;
 using Rebus.Serialization;
 using Rebus.MySql.Extensions;
@@ -66,7 +65,7 @@ namespace Rebus.MySql.Sagas
         {
             using (var connection = await _connectionHelper.GetConnection())
             {
-                var tableNames = connection.GetTableNames().ToHashSet();
+                var tableNames = connection.GetTableNames();
 
                 if (tableNames.Contains(_tableName)) return;
 
