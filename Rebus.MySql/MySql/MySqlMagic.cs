@@ -1,6 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
-using MySqlConnector;
+using MySql.Data.MySqlClient;
 
 namespace Rebus.MySql
 {

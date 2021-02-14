@@ -1,5 +1,5 @@
 using System.Threading.Tasks;
-using MySqlConnector;
+using MySql.Data.MySqlClient;
 
 namespace Rebus.MySql
 {

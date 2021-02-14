@@ -6,7 +6,7 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
-using MySqlConnector;
+using MySql.Data.MySqlClient;
 using Rebus.Bus;
 using Rebus.DataBus;
 using Rebus.Exceptions;

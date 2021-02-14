@@ -11,7 +11,7 @@
         <Copyright>Copyright 2012-2021</Copyright>
         <PackageTags>rebus queue messaging service bus mysql sql</PackageTags>
         <PackageIcon>little_rebusbus2_copy-500x500.png</PackageIcon>
-        <RepositoryUrl>https://github.com/kendall/Rebus.MySqlConnector</RepositoryUrl>
+        <RepositoryUrl>https://github.com/kendall/Rebus.MySql</RepositoryUrl>
         <RepositoryType>git</RepositoryType>
         <PackageId>Rebus.MySql.Tests</PackageId>
     </PropertyGroup>
@@ -37,7 +37,6 @@
         <ProjectReference Include="..\Rebus.MySql\Rebus.MySql.csproj" />
         <PackageReference Include="Rebus.Tests.Contracts" Version="6.4.0" />
         <PackageReference Include="microsoft.net.test.sdk" Version="16.7.1" />
-        <PackageReference Include="MySqlConnector" Version="1.2.1" />
         <PackageReference Include="nunit" Version="3.12.0" />
         <PackageReference Include="nunit3testadapter" Version="3.17.0">
             <PrivateAssets>all</PrivateAssets>

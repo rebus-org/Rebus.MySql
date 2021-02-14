@@ -1,6 +1,6 @@
 ﻿using System;
 using System.Threading.Tasks;
-using MySqlConnector;
+using MySql.Data.MySqlClient;
 using Rebus.Logging;
 using IsolationLevel = System.Data.IsolationLevel;
 

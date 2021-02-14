@@ -1,10 +1,11 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Data.Common;
 using System.Diagnostics;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using MySqlConnector;
+using MySql.Data.MySqlClient;
 using Rebus.Bus;
 using Rebus.Config;
 using Rebus.Exceptions;
@@ -327,7 +328,7 @@ namespace Rebus.MySql.Transport
                             ApplyTransactionSemantics(context, messageId);
                         }
                     }
-                    catch (MySqlException exception) when (exception.ErrorCode == MySqlErrorCode.LockDeadlock)
+                    catch (MySqlException exception) when (exception.Number == (int)MySqlErrorCode.LockDeadlock)
                     {
                         // If we get a transaction deadlock here, simply return null and assume there is nothing to process
                         return null;
@@ -348,7 +349,7 @@ namespace Rebus.MySql.Transport
         /// Maps a <seealso cref="MySqlDataReader"/> that's read a result from the message table into a <seealso cref="TransportMessage"/>
         /// </summary>
         /// <returns>A <seealso cref="TransportMessage"/> representing the row or <c>null</c> if no row was available</returns>
-        protected static async Task<TransportMessage> ExtractTransportMessageFromReader(MySqlDataReader reader, CancellationToken cancellationToken)
+        protected static async Task<TransportMessage> ExtractTransportMessageFromReader(DbDataReader reader, CancellationToken cancellationToken)
         {
             if (await reader.ReadAsync(cancellationToken).ConfigureAwait(false) == false)
             {

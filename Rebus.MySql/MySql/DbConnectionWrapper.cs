@@ -2,7 +2,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
-using MySqlConnector;
+using MySql.Data.MySqlClient;
 using Rebus.Exceptions;
 
 #pragma warning disable 1998
@@ -139,7 +139,7 @@ namespace Rebus.MySql
             {
                 using (_currentTransaction)
                 {
-                    await _currentTransaction.CommitAsync();
+                    _currentTransaction.Commit();
                     _currentTransaction.Dispose();
                     _currentTransaction = null;
                 }

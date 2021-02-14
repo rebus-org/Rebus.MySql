@@ -1,4 +1,4 @@
-﻿using MySqlConnector;
+﻿using MySql.Data.MySqlClient;
 using NUnit.Framework;
 using Rebus.MySql;
 

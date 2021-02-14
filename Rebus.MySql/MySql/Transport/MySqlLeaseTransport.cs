@@ -2,7 +2,7 @@
 using System.Collections.Concurrent;
 using System.Threading;
 using System.Threading.Tasks;
-using MySqlConnector;
+using MySql.Data.MySqlClient;
 using Rebus.Config;
 using Rebus.Logging;
 using Rebus.Messages;
@@ -209,7 +209,7 @@ namespace Rebus.MySql.Transport
                             ApplyTransactionSemantics(context, messageId, cancellationToken);
                         }
                     }
-                    catch (MySqlException exception) when (exception.ErrorCode == MySqlErrorCode.LockDeadlock)
+                    catch (MySqlException exception) when (exception.Number == (int)MySqlErrorCode.LockDeadlock)
                     {
                         // If we get a transaction deadlock here, simply return null and assume there is nothing to process
                         return null;
