@@ -108,7 +108,7 @@ namespace Rebus.MySql.Transport
 
             var tableName = TableName.Parse(address);
 
-            AsyncHelpers.RunSync(() => EnsureTableIsCreatedAsync(tableName));
+            EnsureTableIsCreatedAsync(tableName);
         }
 
         /// <summary>
@@ -116,26 +116,26 @@ namespace Rebus.MySql.Transport
         /// </summary>
         public void EnsureTableIsCreated()
         {
-            AsyncHelpers.RunSync(() => EnsureTableIsCreatedAsync(_receiveTableName));
+            EnsureTableIsCreatedAsync(_receiveTableName);
         }
 
-        async Task EnsureTableIsCreatedAsync(TableName table)
+        void EnsureTableIsCreatedAsync(TableName table)
         {
             try
             {
-                await InnerEnsureTableIsCreatedAsync(table).ConfigureAwait(false);
+                InnerEnsureTableIsCreatedAsync(table);
             }
             catch (Exception)
             {
                 // if it fails the first time, and if it's because of some kind of conflict,
                 // we should run it again and see if the situation has stabilized
-                await InnerEnsureTableIsCreatedAsync(table).ConfigureAwait(false);
+                InnerEnsureTableIsCreatedAsync(table);
             }
         }
 
-        async Task InnerEnsureTableIsCreatedAsync(TableName table)
+        void InnerEnsureTableIsCreatedAsync(TableName table)
         {
-            using (var connection = await _connectionProvider.GetConnection().ConfigureAwait(false))
+            using (var connection = _connectionProvider.GetConnection())
             {
                 var tableNames = connection.GetTableNames();
                 if (tableNames.Contains(table))
@@ -146,7 +146,7 @@ namespace Rebus.MySql.Transport
                 {
                     _log.Info("Table {tableName} does not exist - it will be created now", table.QualifiedName);
 
-                    await connection.ExecuteCommands($@"
+                    connection.ExecuteCommands($@"
                         CREATE TABLE {table.QualifiedName} (
                             `id` BIGINT NOT NULL AUTO_INCREMENT,
                             `priority` INT NOT NULL,
@@ -173,11 +173,11 @@ namespace Rebus.MySql.Transport
                         CREATE INDEX `idx_expiration` ON {table.QualifiedName} (
                             `expiration`,
                             `processing`
-                        );").ConfigureAwait(false);
+                        );");
                 }
 
-                await AdditionalSchemaModifications(connection, table).ConfigureAwait(false);
-                await connection.Complete().ConfigureAwait(false);
+                AdditionalSchemaModifications(connection, table);
+                connection.Complete();
             }
         }
 
@@ -186,9 +186,8 @@ namespace Rebus.MySql.Transport
         /// </summary>
         /// <param name="connection">Connection to the database</param>
         /// <param name="table">Name of the table to create schema modifications for</param>
-        protected virtual Task AdditionalSchemaModifications(IDbConnection connection, TableName table)
+        protected virtual void AdditionalSchemaModifications(IDbConnection connection, TableName table)
         {
-            return Task.FromResult(0);
         }
 
         /// <summary>
@@ -198,32 +197,18 @@ namespace Rebus.MySql.Transport
         {
             try
             {
-                AsyncHelpers.RunSync(() => EnsureTableIsDroppedAsync(_receiveTableName));
+                InnerEnsureTableIsDropped(_receiveTableName);
             }
             catch
             {
                 // if it failed because of a collision between another thread doing the same thing, just try again once:
-                AsyncHelpers.RunSync(() => EnsureTableIsDroppedAsync(_receiveTableName));
+                InnerEnsureTableIsDropped(_receiveTableName);
             }
         }
 
-        async Task EnsureTableIsDroppedAsync(TableName table)
+        void InnerEnsureTableIsDropped(TableName table)
         {
-            try
-            {
-                await InnerEnsureTableIsDroppedAsync(table).ConfigureAwait(false);
-            }
-            catch (Exception)
-            {
-                // if it fails the first time, and if it's because of some kind of conflict,
-                // we should run it again and see if the situation has stabilized
-                await InnerEnsureTableIsDroppedAsync(table).ConfigureAwait(false);
-            }
-        }
-
-        async Task InnerEnsureTableIsDroppedAsync(TableName table)
-        {
-            using (var connection = await _connectionProvider.GetConnection().ConfigureAwait(false))
+            using (var connection = _connectionProvider.GetConnection())
             {
                 var tableNames = connection.GetTableNames();
 
@@ -235,18 +220,17 @@ namespace Rebus.MySql.Transport
 
                 _log.Info("Table {tableName} exists - it will be dropped now", table.QualifiedName);
 
-                await connection.ExecuteCommands($"DROP TABLE IF EXISTS {table};").ConfigureAwait(false);
-                await AdditionalSchemaModificationsOnDeleteQueue(connection, table).ConfigureAwait(false);
-                await connection.Complete().ConfigureAwait(false);
+                connection.ExecuteCommands($"DROP TABLE IF EXISTS {table};");
+                AdditionalSchemaModificationsOnDeleteQueue(connection, table);
+                connection.Complete();
             }
         }
 
         /// <summary>
         /// Provides an opportunity for derived implementations to also update the schema when the queue is deleted automatically
         /// </summary>
-        protected virtual Task AdditionalSchemaModificationsOnDeleteQueue(IDbConnection connection, TableName table)
+        protected void AdditionalSchemaModificationsOnDeleteQueue(IDbConnection connection, TableName table)
         {
-            return Task.FromResult(0);
         }
 
         /// <summary>
@@ -288,7 +272,7 @@ namespace Rebus.MySql.Transport
         {
             TransportMessage transportMessage;
 
-            using (var connection = await _connectionProvider.GetConnection().ConfigureAwait(false))
+            using (var connection = await _connectionProvider.GetConnectionAsync().ConfigureAwait(false))
             {
                 using (var command = connection.CreateCommand())
                 {
@@ -339,7 +323,7 @@ namespace Rebus.MySql.Transport
                         throw new TaskCanceledException("Receive operation was cancelled", exception);
                     }
                 }
-                await connection.Complete().ConfigureAwait(false);
+                await connection.CompleteAsync().ConfigureAwait(false);
             }
 
             return transportMessage;
@@ -403,14 +387,14 @@ namespace Rebus.MySql.Transport
         /// <param name="messageId">Identifier of the message currently being processed</param>
         private async Task ClearProcessing(long messageId)
         {
-            using (var connection = await _connectionProvider.GetConnection().ConfigureAwait(false))
+            using (var connection = await _connectionProvider.GetConnectionAsync().ConfigureAwait(false))
             {
                 using (var command = connection.CreateCommand())
                 {
                     command.CommandText = $@"UPDATE {_receiveTableName.QualifiedName} SET processing = 0 WHERE id = {messageId}";
                     await command.ExecuteNonQueryAsync().ConfigureAwait(false);
                 }
-                await connection.Complete().ConfigureAwait(false);
+                await connection.CompleteAsync().ConfigureAwait(false);
             }
         }
 
@@ -420,14 +404,14 @@ namespace Rebus.MySql.Transport
         /// <param name="messageId">Identifier of the message currently being processed</param>
         protected async Task DeleteMessage(long messageId)
         {
-            using (var connection = await _connectionProvider.GetConnection().ConfigureAwait(false))
+            using (var connection = await _connectionProvider.GetConnectionAsync().ConfigureAwait(false))
             {
                 using (var command = connection.CreateCommand())
                 {
                     command.CommandText = $@"DELETE FROM {_receiveTableName.QualifiedName} WHERE id = {messageId}";
                     await command.ExecuteNonQueryAsync().ConfigureAwait(false);
                 }
-                await connection.Complete().ConfigureAwait(false);
+                await connection.CompleteAsync().ConfigureAwait(false);
             }
         }
 
@@ -538,7 +522,7 @@ namespace Rebus.MySql.Transport
 
             while (true)
             {
-                using (var connection = await _connectionProvider.GetConnection().ConfigureAwait(false))
+                using (var connection = await _connectionProvider.GetConnectionAsync().ConfigureAwait(false))
                 {
                     // First get a batch of up to 100 messages at a time to delete in one go. To avoid deadlocks
                     // with running messages that are wrapped up in transactions, we need to select the ID's out
@@ -572,7 +556,7 @@ namespace Rebus.MySql.Transport
                     }
 
                     results += affectedRows;
-                    await connection.Complete().ConfigureAwait(false);
+                    await connection.CompleteAsync().ConfigureAwait(false);
 
                     if (affectedRows == 0) break;
                 }
@@ -589,8 +573,8 @@ namespace Rebus.MySql.Transport
         {
             // Get the connection and set it up to be disposed or committed in the transaction context. MySQL cannot
             // share connections, so we do not store it in the shared context items, but create a new one each time.
-            var connection = await _connectionProvider.GetConnection().ConfigureAwait(false);
-            context.OnCommitted(async ctx => await connection.Complete().ConfigureAwait(false));
+            var connection = await _connectionProvider.GetConnectionAsync().ConfigureAwait(false);
+            context.OnCommitted(async ctx => await connection.CompleteAsync().ConfigureAwait(false));
             context.OnDisposed(ctx => connection.Dispose());
             return connection;
         }

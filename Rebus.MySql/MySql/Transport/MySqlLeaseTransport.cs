@@ -18,8 +18,6 @@ namespace Rebus.MySql.Transport
     /// </summary>
     public class MySqlLeaseTransport : MySqlTransport
     {
-        static readonly Task CompletedResult = Task.FromResult(0);
-
         /// <summary>
         /// Key for storing the outbound message buffer when performing <seealso cref="Send"/>
         /// </summary>
@@ -107,7 +105,7 @@ namespace Rebus.MySql.Transport
                 }
             );
 
-            return CompletedResult;
+            return Task.CompletedTask;
         }
 
         /// <summary>
@@ -115,7 +113,7 @@ namespace Rebus.MySql.Transport
         /// </summary>
         /// <param name="connection">Connection to the database</param>
         /// <param name="table">Name of the table to create schema modifications for</param>
-        protected override async Task AdditionalSchemaModifications(IDbConnection connection, TableName table)
+        protected override void AdditionalSchemaModifications(IDbConnection connection, TableName table)
         {
             // Use the current database prefix if one is not provided
             var schema = table.Schema;
@@ -133,7 +131,7 @@ namespace Rebus.MySql.Transport
                 !columns.ContainsKey("leased_at") ||
                 !indexes.ContainsKey("idx_receive_lease"))
             {
-                await connection.ExecuteCommands($@"
+                connection.ExecuteCommands($@"
                     {MySqlMagic.CreateColumnIfNotExistsSql(schema, tableName, "leased_until", "datetime(6) null")}
                     ----
                     {MySqlMagic.CreateColumnIfNotExistsSql(schema, tableName, "leased_by", $"varchar({LeasedByColumnSize}) null")}
@@ -142,7 +140,7 @@ namespace Rebus.MySql.Transport
                     ----
                     {MySqlMagic.DropIndexIfExistsSql(schema, tableName, "idx_receive")}
                     ----
-                    {MySqlMagic.CreateIndexIfNotExistsSql(schema, tableName, "idx_receive_lease", "visible, expiration, processing, leased_until")}").ConfigureAwait(false);
+                    {MySqlMagic.CreateIndexIfNotExistsSql(schema, tableName, "idx_receive_lease", "visible, expiration, processing, leased_until")}");
             }
         }
 
@@ -156,7 +154,7 @@ namespace Rebus.MySql.Transport
         {
             TransportMessage transportMessage;
 
-            using (var connection = await _connectionProvider.GetConnection())
+            using (var connection = await _connectionProvider.GetConnectionAsync())
             {
                 using (var command = connection.CreateCommand())
                 {
@@ -221,7 +219,7 @@ namespace Rebus.MySql.Transport
                     }
                 }
 
-                await connection.Complete();
+                await connection.CompleteAsync();
             }
 
             return transportMessage;
@@ -284,7 +282,7 @@ namespace Rebus.MySql.Transport
 
                     async Task SendOutgoingMessages(ITransactionContext _)
                     {
-                        using (var connection = await _connectionProvider.GetConnection())
+                        using (var connection = await _connectionProvider.GetConnectionAsync())
                         {
                             while (outgoingMessages.IsEmpty == false)
                             {
@@ -296,7 +294,7 @@ namespace Rebus.MySql.Transport
                                 await InnerSend(addressed.DestinationAddress, addressed.Message, connection);
                             }
 
-                            await connection.Complete();
+                            await connection.CompleteAsync();
                         }
                     }
 
@@ -317,7 +315,7 @@ namespace Rebus.MySql.Transport
         /// <param name="cancellationToken">Token to abort processing</param>
         protected virtual async Task UpdateLease(IDbConnectionProvider connectionProvider, string tableName, long messageId, TimeSpan? leaseInterval, CancellationToken cancellationToken)
         {
-            using (var connection = await connectionProvider.GetConnection())
+            using (var connection = await connectionProvider.GetConnectionAsync())
             {
                 using (var command = connection.CreateCommand())
                 {
@@ -344,7 +342,7 @@ namespace Rebus.MySql.Transport
                     }
                     await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
                 }
-                await connection.Complete();
+                await connection.CompleteAsync();
             }
         }
 

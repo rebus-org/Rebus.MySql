@@ -39,7 +39,7 @@ namespace Rebus.MySql.Tests.Sagas
         {
             var storedCopies = new List<SagaDataSnapshot>();
 
-            using var connection = await connectionProvider.GetConnection();
+            using var connection = await connectionProvider.GetConnectionAsync();
             await using (var command = connection.CreateCommand())
             {
                 command.CommandText = $@"SELECT * FROM {tableName}";
@@ -51,7 +51,7 @@ namespace Rebus.MySql.Tests.Sagas
                     storedCopies.Add(new SagaDataSnapshot { SagaData = sagaData, Metadata = metadata });
                 }
             }
-            await connection.Complete();
+            await connection.CompleteAsync();
             return storedCopies;
         }
     }

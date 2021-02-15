@@ -44,18 +44,18 @@ namespace Rebus.MySql.Timeouts
         {
             try
             {
-                AsyncHelpers.RunSync(EnsureTableIsCreatedAsync);
+                InnerEnsureTableIsCreated();
             }
             catch
             {
                 // if it failed because of a collision between another thread doing the same thing, just try again once:
-                AsyncHelpers.RunSync(EnsureTableIsCreatedAsync);
+                InnerEnsureTableIsCreated();
             }
         }
 
-        async Task EnsureTableIsCreatedAsync()
+        void InnerEnsureTableIsCreated()
         {
-            using (var connection = await _connectionProvider.GetConnection().ConfigureAwait(false))
+            using (var connection = _connectionProvider.GetConnection())
             {
                 var tableNames = connection.GetTableNames();
                 if (tableNames.Contains(_tableName))
@@ -65,7 +65,7 @@ namespace Rebus.MySql.Timeouts
 
                 _log.Info("Table {tableName} does not exist - it will be created now", _tableName.QualifiedName);
 
-                await connection.ExecuteCommands($@"
+                connection.ExecuteCommands($@"
                     CREATE TABLE {_tableName.QualifiedName} (
                         `id` BIGINT NOT NULL AUTO_INCREMENT,
                         `due_time` DATETIME(6) NOT NULL,
@@ -76,8 +76,8 @@ namespace Rebus.MySql.Timeouts
                     ----
                     CREATE INDEX `idx_due_time` ON {_tableName.QualifiedName} (
                         `due_time`
-                    );").ConfigureAwait(false);
-                await connection.Complete().ConfigureAwait(false);
+                    );");
+                connection.Complete();
             }
         }
 
@@ -87,7 +87,7 @@ namespace Rebus.MySql.Timeouts
         /// </summary>
         public async Task Defer(DateTimeOffset approximateDueTime, Dictionary<string, string> headers, byte[] body)
         {
-            using (var connection = await _connectionProvider.GetConnection().ConfigureAwait(false))
+            using (var connection = await _connectionProvider.GetConnectionAsync().ConfigureAwait(false))
             {
                 using (var command = connection.CreateCommand())
                 {
@@ -107,7 +107,7 @@ namespace Rebus.MySql.Timeouts
                     command.Parameters.Add("body", MySqlDbType.VarBinary, MathUtil.GetNextPowerOfTwo(body.Length)).Value = body;
                     await command.ExecuteNonQueryAsync().ConfigureAwait(false);
                 }
-                await connection.Complete().ConfigureAwait(false);
+                await connection.CompleteAsync().ConfigureAwait(false);
             }
         }
 
@@ -116,7 +116,7 @@ namespace Rebus.MySql.Timeouts
         /// </summary>
         public async Task<DueMessagesResult> GetDueMessages()
         {
-            var connection = await _connectionProvider.GetConnection().ConfigureAwait(false);
+            var connection = await _connectionProvider.GetConnectionAsync().ConfigureAwait(false);
             try
             {
                 var dueMessages = new List<DueMessage>();
@@ -164,7 +164,7 @@ namespace Rebus.MySql.Timeouts
                     {
                         using (connection)
                         {
-                            await connection.Complete().ConfigureAwait(false);
+                            await connection.CompleteAsync().ConfigureAwait(false);
                         }
                     });
                 }

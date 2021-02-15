@@ -95,7 +95,7 @@ namespace Rebus.MySql
         /// Execute multiple commands separately
         /// </summary>
         /// <param name="sqlCommands">SQL commands to run separated by ---- characters</param>
-        public async Task ExecuteCommands(string sqlCommands)
+        public void ExecuteCommands(string sqlCommands)
         {
             foreach (var sqlCommand in sqlCommands.Split(new[] { "----" }, StringSplitOptions.RemoveEmptyEntries))
             {
@@ -104,7 +104,7 @@ namespace Rebus.MySql
                     try
                     {
                         command.CommandText = sqlCommand;
-                        await command.ExecuteNonQueryAsync().ConfigureAwait(false);
+                        command.ExecuteNonQuery();
                     }
                     catch (MySqlException exception)
                     {
@@ -112,25 +112,32 @@ namespace Rebus.MySql
 {command.CommandText}
 ");
                     }
-                    await Execute(command).ConfigureAwait(false);
                 }
             }
         }
 
         /// <summary>
-        /// Execute a MySQL command and throw an exception if we have issues
+        /// Marks that all work has been successfully done and the <see cref="MySqlConnection"/> may have its transaction committed or whatever is natural to do at this time
         /// </summary>
-        /// <param name="command">Command to execute</param>
-        /// <returns>Task for the command execution</returns>
-        /// <exception cref="RebusApplicationException"></exception>
-        static async Task Execute(MySqlCommand command)
+        public void Complete()
         {
+            if (_managedExternally) return;
+
+            if (_currentTransaction != null)
+            {
+                using (_currentTransaction)
+                {
+                    _currentTransaction.Commit();
+                    _currentTransaction.Dispose();
+                    _currentTransaction = null;
+                }
+            }
         }
 
         /// <summary>
         /// Marks that all work has been successfully done and the <see cref="MySqlConnection"/> may have its transaction committed or whatever is natural to do at this time
         /// </summary>
-        public async Task Complete()
+        public async Task CompleteAsync()
         {
             if (_managedExternally) return;
 

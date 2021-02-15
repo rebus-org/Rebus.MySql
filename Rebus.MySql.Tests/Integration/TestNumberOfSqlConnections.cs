@@ -57,9 +57,14 @@ namespace Rebus.MySql.Tests.Integration
                 _inner = new DbConnectionProvider(connectionString, new ConsoleLoggerFactory(true));
             }
 
-            public async Task<IDbConnection> GetConnection()
+            public IDbConnection GetConnection()
             {
-                return new Bimse(await _inner.GetConnection(), Interlocked.Increment(ref _counter), _activeConnections);
+                return new Bimse(_inner.GetConnection(), Interlocked.Increment(ref _counter), _activeConnections);
+            }
+
+            public async Task<IDbConnection> GetConnectionAsync()
+            {
+                return new Bimse(await _inner.GetConnectionAsync(), Interlocked.Increment(ref _counter), _activeConnections);
             }
 
             class Bimse : IDbConnection
@@ -88,9 +93,14 @@ namespace Rebus.MySql.Tests.Integration
                     return _innerConnection.GetTableNames();
                 }
 
-                public async Task Complete()
+                public void Complete()
                 {
-                    await _innerConnection.Complete();
+                    _innerConnection.Complete();
+                }
+
+                public async Task CompleteAsync()
+                {
+                    await _innerConnection.CompleteAsync();
                 }
 
                 public Dictionary<string, string> GetColumns(string schema, string dataTableName)
@@ -103,9 +113,9 @@ namespace Rebus.MySql.Tests.Integration
                     return _innerConnection.GetIndexes(schema, dataTableName);
                 }
 
-                public Task ExecuteCommands(string sqlCommands)
+                public void ExecuteCommands(string sqlCommands)
                 {
-                    return _innerConnection.ExecuteCommands(sqlCommands);
+                    _innerConnection.ExecuteCommands(sqlCommands);
                 }
 
                 public void Dispose()

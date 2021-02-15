@@ -56,18 +56,18 @@ namespace Rebus.MySql.DataBus
 
             try
             {
-                AsyncHelpers.RunSync(EnsureTableIsCreatedAsync);
+                EnsureTableIsCreated();
             }
             catch
             {
                 // if it failed because of a collision between another thread doing the same thing, just try again once:
-                AsyncHelpers.RunSync(EnsureTableIsCreatedAsync);
+                EnsureTableIsCreated();
             }
         }
 
-        async Task EnsureTableIsCreatedAsync()
+        void EnsureTableIsCreated()
         {
-            using (var connection = await _connectionProvider.GetConnection().ConfigureAwait(false))
+            using (var connection = _connectionProvider.GetConnection())
             {
                 var tableNames = connection.GetTableNames();
                 if (tableNames.Contains(_tableName))
@@ -77,7 +77,7 @@ namespace Rebus.MySql.DataBus
 
                 _log.Info("Creating data bus table {tableName}", _tableName.QualifiedName);
 
-                await connection.ExecuteCommands($@"
+                connection.ExecuteCommands($@"
                     CREATE TABLE {_tableName.QualifiedName} (
                         `id` VARCHAR(200) NOT NULL,
                         `meta` LONGBLOB NOT NULL,
@@ -85,8 +85,8 @@ namespace Rebus.MySql.DataBus
                         `creation_time` DATETIME(6) NOT NULL,
                         `last_read_time` DATETIME(6) DEFAULT NULL,
                         PRIMARY KEY (`id`)
-                    )").ConfigureAwait(false);
-                await connection.Complete().ConfigureAwait(false);
+                    )");
+                connection.Complete();
             }
         }
 
@@ -102,7 +102,7 @@ namespace Rebus.MySql.DataBus
 
             try
             {
-                using (var connection = await _connectionProvider.GetConnection().ConfigureAwait(false))
+                using (var connection = await _connectionProvider.GetConnectionAsync().ConfigureAwait(false))
                 {
                     using (var command = connection.CreateCommand())
                     {
@@ -133,7 +133,7 @@ namespace Rebus.MySql.DataBus
                             await command.ExecuteNonQueryAsync().ConfigureAwait(false);
                         }
                     }
-                    await connection.Complete().ConfigureAwait(false);
+                    await connection.CompleteAsync().ConfigureAwait(false);
                 }
             }
             catch (Exception exception)
@@ -152,7 +152,7 @@ namespace Rebus.MySql.DataBus
                 // update last read time quickly
                 await UpdateLastReadTime(id).ConfigureAwait(false);
                 var objectsToDisposeOnException = new ConcurrentStack<IDisposable>();
-                var connection = await _connectionProvider.GetConnection().ConfigureAwait(false);
+                var connection = await _connectionProvider.GetConnectionAsync().ConfigureAwait(false);
                 objectsToDisposeOnException.Push(connection);
                 using (var command = connection.CreateCommand())
                 {
@@ -204,10 +204,10 @@ namespace Rebus.MySql.DataBus
 
         async Task UpdateLastReadTime(string id)
         {
-            using (var connection = await _connectionProvider.GetConnection().ConfigureAwait(false))
+            using (var connection = await _connectionProvider.GetConnectionAsync().ConfigureAwait(false))
             {
                 await UpdateLastReadTime(id, connection).ConfigureAwait(false);
-                await connection.Complete().ConfigureAwait(false);
+                await connection.CompleteAsync().ConfigureAwait(false);
             }
         }
 
@@ -229,7 +229,7 @@ namespace Rebus.MySql.DataBus
         {
             try
             {
-                using (var connection = await _connectionProvider.GetConnection().ConfigureAwait(false))
+                using (var connection = await _connectionProvider.GetConnectionAsync().ConfigureAwait(false))
                 {
                     using (var command = connection.CreateCommand())
                     {
@@ -278,7 +278,7 @@ namespace Rebus.MySql.DataBus
         {
             try
             {
-                using (var connection = await _connectionProvider.GetConnection().ConfigureAwait(false))
+                using (var connection = await _connectionProvider.GetConnectionAsync().ConfigureAwait(false))
                 {
                     using (var command = connection.CreateCommand())
                     {
@@ -286,7 +286,7 @@ namespace Rebus.MySql.DataBus
                         command.Parameters.Add("id", MySqlDbType.VarChar, 200).Value = id;
                         await command.ExecuteNonQueryAsync().ConfigureAwait(false);
                     }
-                    await connection.Complete().ConfigureAwait(false);
+                    await connection.CompleteAsync().ConfigureAwait(false);
                 }
             }
             catch (Exception exception)
@@ -304,7 +304,7 @@ namespace Rebus.MySql.DataBus
 
             AsyncHelpers.RunSync(async () =>
             {
-                connection = await _connectionProvider.GetConnection().ConfigureAwait(false);
+                connection = await _connectionProvider.GetConnectionAsync().ConfigureAwait(false);
             });
 
             using (connection)

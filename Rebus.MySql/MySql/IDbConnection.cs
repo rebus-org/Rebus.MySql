@@ -29,7 +29,12 @@ namespace Rebus.MySql
         /// <summary>
         /// Marks that all work has been successfully done and the <see cref="MySqlConnection"/> may have its transaction committed or whatever is natural to do at this time
         /// </summary>
-        Task Complete();
+        void Complete();
+
+        /// <summary>
+        /// Marks that all work has been successfully done and the <see cref="MySqlConnection"/> may have its transaction committed or whatever is natural to do at this time, async version
+        /// </summary>
+        Task CompleteAsync();
 
         /// <summary>
         /// Gets information about the columns in the table given by [<paramref name="schema"/>].[<paramref name="dataTableName"/>]
@@ -45,6 +50,6 @@ namespace Rebus.MySql
         /// Execute multiple commands separately
         /// </summary>
         /// <param name="sqlCommands">SQL commands to run separated by ---- characters</param>
-        Task ExecuteCommands(string sqlCommands);
+        void ExecuteCommands(string sqlCommands);
     }
 }

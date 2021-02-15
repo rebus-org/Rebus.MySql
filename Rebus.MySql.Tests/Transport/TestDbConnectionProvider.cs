@@ -14,7 +14,7 @@ namespace Rebus.MySql.Tests.Transport
         {
             var provizzle = new DbConnectionProvider(MySqlTestHelper.ConnectionString, new ConsoleLoggerFactory(true));
 
-            using var dbConnection = await provizzle.GetConnection();
+            using var dbConnection = await provizzle.GetConnectionAsync();
             using var cmd = dbConnection.CreateCommand();
             cmd.CommandText = "insert into bimse (text) values ('hej med dig')";
 
@@ -34,7 +34,7 @@ namespace Rebus.MySql.Tests.Transport
                 Timeout = TimeSpan.FromSeconds(60)
             });
 
-            using var dbConnection = await provizzle.GetConnection();
+            using var dbConnection = await provizzle.GetConnectionAsync();
             using var cmd = dbConnection.CreateCommand();
             cmd.CommandText = "insert into bimse (text) values ('Nogen fjellaper liger 2PC')";
 

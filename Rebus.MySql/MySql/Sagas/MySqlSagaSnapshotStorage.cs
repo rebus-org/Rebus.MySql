@@ -42,18 +42,18 @@ namespace Rebus.MySql.Sagas
         {
             try
             {
-                AsyncHelpers.RunSync(EnsureTableIsCreatedAsync);
+                InnerEnsureTableIsCreated();
             }
             catch
             {
                 // if it failed because of a collision between another thread doing the same thing, just try again once:
-                AsyncHelpers.RunSync(EnsureTableIsCreatedAsync);
+                InnerEnsureTableIsCreated();
             }
         }
 
-        async Task EnsureTableIsCreatedAsync()
+        void InnerEnsureTableIsCreated()
         {
-            using (var connection = await _connectionProvider.GetConnection())
+            using (var connection = _connectionProvider.GetConnection())
             {
                 var tableNames = connection.GetTableNames();
 
@@ -64,15 +64,15 @@ namespace Rebus.MySql.Sagas
 
                 _log.Info("Table {tableName} does not exist - it will be created now", _tableName.QualifiedName);
 
-                await connection.ExecuteCommands($@"
+                connection.ExecuteCommands($@"
                     CREATE TABLE {_tableName.QualifiedName} (
                         `id` CHAR(36) NOT NULL,
                         `revision` INT NOT NULL,
                         `data` LONGTEXT NOT NULL,
                         `metadata` LONGTEXT NOT NULL,
                         PRIMARY KEY (`id`, `revision`)
-                    )").ConfigureAwait(false);
-                await connection.Complete().ConfigureAwait(false);
+                    )");
+                connection.Complete();
             }
         }
 
@@ -81,7 +81,7 @@ namespace Rebus.MySql.Sagas
         /// </summary>
         public async Task Save(ISagaData sagaData, Dictionary<string, string> sagaAuditMetadata)
         {
-            using (var connection = await _connectionProvider.GetConnection())
+            using (var connection = await _connectionProvider.GetConnectionAsync())
             {
                 using (var command = connection.CreateCommand())
                 {
@@ -106,7 +106,7 @@ namespace Rebus.MySql.Sagas
                     Console.WriteLine($"OK WE'RE SAVING SAGA SNAPSHOT {sagaData.Id} rev. {sagaData.Revision} NOW");
                     await command.ExecuteNonQueryAsync().ConfigureAwait(false);
                 }
-                await connection.Complete().ConfigureAwait(false);
+                await connection.CompleteAsync().ConfigureAwait(false);
             }
         }
     }

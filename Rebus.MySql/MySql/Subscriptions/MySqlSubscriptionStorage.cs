@@ -44,21 +44,18 @@ namespace Rebus.MySql.Subscriptions
         /// </summary>
         public void Initialize()
         {
-            AsyncHelpers.RunSync(async () =>
+            try
             {
-                try
+                using (var connection = _connectionProvider.GetConnection())
                 {
-                    using (var connection = await _connectionProvider.GetConnection())
-                    {
-                        _topicLength = GetColumnWidth("topic", connection);
-                        _addressLength = GetColumnWidth("address", connection);
-                    }
+                    _topicLength = GetColumnWidth("topic", connection);
+                    _addressLength = GetColumnWidth("address", connection);
                 }
-                catch (Exception exception)
-                {
-                    throw new RebusApplicationException(exception, "Error during schema reflection");
-                }
-            });
+            }
+            catch (Exception exception)
+            {
+                throw new RebusApplicationException(exception, "Error during schema reflection");
+            }
         }
 
         int GetColumnWidth(string columnName, IDbConnection connection)
@@ -96,18 +93,18 @@ namespace Rebus.MySql.Subscriptions
         {
             try
             {
-                AsyncHelpers.RunSync(EnsureTableIsCreatedAsync);
+                InnerEnsureTableIsCreated();
             }
             catch
             {
                 // if it failed because of a collision between another thread doing the same thing, just try again once:
-                AsyncHelpers.RunSync(EnsureTableIsCreatedAsync);
+                InnerEnsureTableIsCreated();
             }
         }
 
-        async Task EnsureTableIsCreatedAsync()
+        void InnerEnsureTableIsCreated()
         {
-            using (var connection = await _connectionProvider.GetConnection())
+            using (var connection = _connectionProvider.GetConnection())
             {
                 var tableNames = connection.GetTableNames();
                 if (tableNames.Contains(_tableName))
@@ -119,15 +116,15 @@ namespace Rebus.MySql.Subscriptions
 
                 using (var command = connection.CreateCommand())
                 {
-                    await connection.ExecuteCommands($@"
+                    connection.ExecuteCommands($@"
                         CREATE TABLE {_tableName.QualifiedName} (
                             `topic` VARCHAR({_topicLength}) NOT NULL,
 	                        `address` VARCHAR({_addressLength}) NOT NULL,
                             PRIMARY KEY (`topic`, `address`)
-                        )").ConfigureAwait(false);
-                    await command.ExecuteNonQueryAsync().ConfigureAwait(false);
+                        )");
+                    command.ExecuteNonQuery();
                 }
-                await connection.Complete().ConfigureAwait(false);
+                connection.Complete();
             }
         }
 
@@ -136,7 +133,7 @@ namespace Rebus.MySql.Subscriptions
         /// </summary>
         public async Task<string[]> GetSubscriberAddresses(string topic)
         {
-            using (var connection = await _connectionProvider.GetConnection())
+            using (var connection = await _connectionProvider.GetConnectionAsync())
             {
                 using (var command = connection.CreateCommand())
                 {
@@ -166,7 +163,7 @@ namespace Rebus.MySql.Subscriptions
         {
             CheckLengths(topic, subscriberAddress);
 
-            using (var connection = await _connectionProvider.GetConnection())
+            using (var connection = await _connectionProvider.GetConnectionAsync())
             {
                 using (var command = connection.CreateCommand())
                 {
@@ -182,7 +179,7 @@ namespace Rebus.MySql.Subscriptions
                     command.Parameters.Add("address", MySqlDbType.VarChar, _addressLength).Value = subscriberAddress;
                     await command.ExecuteNonQueryAsync().ConfigureAwait(false);
                 }
-                await connection.Complete().ConfigureAwait(false);
+                await connection.CompleteAsync().ConfigureAwait(false);
             }
         }
 
@@ -208,7 +205,7 @@ namespace Rebus.MySql.Subscriptions
         {
             CheckLengths(topic, subscriberAddress);
 
-            using (var connection = await _connectionProvider.GetConnection())
+            using (var connection = await _connectionProvider.GetConnectionAsync())
             {
                 using (var command = connection.CreateCommand())
                 {
@@ -217,7 +214,7 @@ namespace Rebus.MySql.Subscriptions
                     command.Parameters.Add("address", MySqlDbType.VarChar, _addressLength).Value = subscriberAddress;
                     await command.ExecuteNonQueryAsync().ConfigureAwait(false);
                 }
-                await connection.Complete().ConfigureAwait(false);
+                await connection.CompleteAsync().ConfigureAwait(false);
             }
         }
 

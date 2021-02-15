@@ -12,6 +12,11 @@ namespace Rebus.MySql
         /// <summary>
         /// Gets a wrapper with the current <see cref="MySqlConnection"/> inside
         /// </summary>
-        Task<IDbConnection> GetConnection();
+        IDbConnection GetConnection();
+
+        /// <summary>
+        /// Gets a wrapper with the current <see cref="MySqlConnection"/> inside, async version
+        /// </summary>
+        Task<IDbConnection> GetConnectionAsync();
     }
 }

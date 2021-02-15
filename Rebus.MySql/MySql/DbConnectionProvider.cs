@@ -41,7 +41,35 @@ namespace Rebus.MySql
         /// <summary>
         /// Gets a nice ready-to-use database connection with an open transaction
         /// </summary>
-        public async Task<IDbConnection> GetConnection()
+        public IDbConnection GetConnection()
+        {
+            MySqlConnection connection = null;
+            MySqlTransaction transaction = null;
+            try
+            {
+                if (_enlistInAmbientTransaction == false)
+                {
+                    connection = CreateSqlConnectionSuppressingAPossibleAmbientTransaction();
+                    transaction = connection.BeginTransaction(IsolationLevel);
+                }
+                else
+                {
+                    connection = CreateSqlConnectionInAPossiblyAmbientTransaction();
+                }
+
+                return new DbConnectionWrapper(connection, transaction, false);
+            }
+            catch (Exception)
+            {
+                connection?.Dispose();
+                throw;
+            }
+        }
+
+        /// <summary>
+        /// Gets a wrapper with the current <see cref="MySqlConnection"/> inside, async version
+        /// </summary>
+        public async Task<IDbConnection> GetConnectionAsync()
         {
             MySqlConnection connection = null;
             MySqlTransaction transaction = null;
