@@ -28,8 +28,8 @@ namespace Rebus.MySql.Tests.Transport
 
         [TestCase(1000, true)]
         [TestCase(1000, false)]
-        // [TestCase(10000, true)]
-        // [TestCase(10000, false)]
+        [TestCase(5000, true)]
+        [TestCase(5000, false)]
         public async Task CheckReceivePerformance(int messageCount, bool useLeaseBasedTransport)
         {
             var adapter = Using(new BuiltinHandlerActivator());

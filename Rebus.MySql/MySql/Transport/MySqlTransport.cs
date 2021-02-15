@@ -273,8 +273,10 @@ namespace Rebus.MySql.Transport
                 {
                     var tableName = _receiveTableName.QualifiedName;
                     command.CommandText = $@"
-                        SELECT id INTO @id
-                        FROM {tableName} 
+                        SELECT id,
+                               headers,
+                               body
+                        FROM {tableName}
                         WHERE visible < now(6) AND 
                               expiration > now(6) AND
                               processing = 0 
@@ -282,30 +284,28 @@ namespace Rebus.MySql.Transport
                                  visible ASC, 
                                  id ASC 
                         LIMIT 1
-                        FOR UPDATE;
-
-                        SELECT id,
-                               headers,
-                               body
-                        FROM {tableName}
-                        WHERE id = @id
-                        LIMIT 1;
-
-                        UPDATE {tableName} 
-                        SET processing = 1 
-                        WHERE id = @id;
-
-                        SET @id = null";
+                        FOR UPDATE";
                     try
                     {
+                        // Read the message and extra the data and ID if found
+                        long messageId;
                         using (var reader = command.ExecuteReader())
                         {
                             transportMessage = ExtractTransportMessageFromReader(reader);
                             if (transportMessage == null) return null;
-
-                            var messageId = (long)reader["id"];
-                            ApplyTransactionSemantics(context, messageId);
+                            messageId = (long)reader["id"];
                         }
+
+                        // Mark the message as being processed within the transaction
+                        command.CommandText = $@"
+                            UPDATE {tableName} 
+                            SET processing = 1 
+                            WHERE id = @message_id";
+                        command.Parameters.Add("message_id", MySqlDbType.Int64).Value = messageId;
+                        command.ExecuteNonQuery();
+
+                        // Now apply transaction semantics to clear the message later
+                        ApplyTransactionSemantics(context, messageId);
                     }
                     catch (MySqlException exception) when (exception.Number == (int)MySqlErrorCode.LockDeadlock)
                     {

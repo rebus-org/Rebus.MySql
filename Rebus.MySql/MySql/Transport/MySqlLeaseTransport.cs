@@ -159,7 +159,9 @@ namespace Rebus.MySql.Transport
                 {
                     var tableName = _receiveTableName.QualifiedName;
                     command.CommandText = $@"
-                        SELECT id INTO @id
+                        SELECT id,
+                               headers,
+                               body
                         FROM {tableName} 
                         WHERE visible < now(6) AND 
                               expiration > now(6) AND 
@@ -173,38 +175,36 @@ namespace Rebus.MySql.Transport
                                  visible ASC, 
                                  id ASC 
                         LIMIT 1
-                        FOR UPDATE;
-
-                        SELECT id,
-                               headers,
-                               body
-                        FROM {tableName}
-                        WHERE id = @id
-                        LIMIT 1;
-
-                        UPDATE {tableName} 
-                        SET processing = 1,
-                            leased_until = date_add(date_add(now(6), INTERVAL @lease_total_seconds SECOND), INTERVAL @lease_microseconds MICROSECOND),
-                            leased_at = now(6),
-                            leased_by = @leased_by
-                        WHERE id = @id;
-
-                        SET @id = null;";
-                    command.Parameters.Add("lease_total_seconds", MySqlDbType.Int32).Value = (int)_leaseInterval.TotalSeconds;
-                    command.Parameters.Add("lease_microseconds", MySqlDbType.Int32).Value = _leaseInterval.Milliseconds * 1000;
-                    command.Parameters.Add("lease_tolerance_total_seconds", MySqlDbType.Int32).Value = (int)_leaseTolerance.TotalSeconds;
-                    command.Parameters.Add("lease_tolerance_microseconds", MySqlDbType.Int32).Value = _leaseTolerance.Milliseconds * 1000;
-                    command.Parameters.Add("leased_by", MySqlDbType.VarChar, LeasedByColumnSize).Value = _leasedByFactory();
+                        FOR UPDATE";
                     try
                     {
+                        // Read the message and extra the data and ID if found
+                        long messageId;
                         using (var reader = command.ExecuteReader())
                         {
                             transportMessage = ExtractTransportMessageFromReader(reader);
                             if (transportMessage == null) return null;
-
-                            var messageId = (long)reader["id"];
-                            ApplyLeasedTransaction(context, messageId);
+                            messageId = (long)reader["id"];
                         }
+
+                        // Mark the message as being processed within the transaction
+                        command.CommandText = $@"
+                            UPDATE {tableName} 
+                            SET processing = 1,
+                                leased_until = date_add(date_add(now(6), INTERVAL @lease_total_seconds SECOND), INTERVAL @lease_microseconds MICROSECOND),
+                                leased_at = now(6),
+                                leased_by = @leased_by
+                            WHERE id = @message_id";
+                        command.Parameters.Add("lease_total_seconds", MySqlDbType.Int32).Value = (int)_leaseInterval.TotalSeconds;
+                        command.Parameters.Add("lease_microseconds", MySqlDbType.Int32).Value = _leaseInterval.Milliseconds * 1000;
+                        command.Parameters.Add("lease_tolerance_total_seconds", MySqlDbType.Int32).Value = (int)_leaseTolerance.TotalSeconds;
+                        command.Parameters.Add("lease_tolerance_microseconds", MySqlDbType.Int32).Value = _leaseTolerance.Milliseconds * 1000;
+                        command.Parameters.Add("leased_by", MySqlDbType.VarChar, LeasedByColumnSize).Value = _leasedByFactory();
+                        command.Parameters.Add("message_id", MySqlDbType.Int64).Value = messageId;
+                        command.ExecuteNonQuery();
+
+                        // Now apply transaction semantics to clear the message later
+                        ApplyLeasedTransactionSemantics(context, messageId);
                     }
                     catch (MySqlException exception) when (exception.Number == (int)MySqlErrorCode.LockDeadlock)
                     {
@@ -224,7 +224,7 @@ namespace Rebus.MySql.Transport
         /// </summary>
         /// <param name="context">Transaction context of the message processing</param>
         /// <param name="messageId">Identifier of the message currently being processed</param>
-        private void ApplyLeasedTransaction(ITransactionContext context, long messageId)
+        private void ApplyLeasedTransactionSemantics(ITransactionContext context, long messageId)
         {
             AutomaticLeaseRenewer renewal = null;
             if (_automaticLeaseRenewal)
