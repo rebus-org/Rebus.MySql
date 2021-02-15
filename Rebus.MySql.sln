@@ -1,6 +1,6 @@
 Microsoft Visual Studio Solution File, Format Version 12.00
-# Visual Studio 15
-VisualStudioVersion = 15.0.26228.4
+# Visual Studio Version 16
+VisualStudioVersion = 16.0.29215.179
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "stuff", "stuff", "{1ABDD7C1-1F8D-402D-8692-3E4B66962DE0}"
 	ProjectSection(SolutionItems) = preProject
@@ -10,9 +10,18 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "stuff", "stuff", "{1ABDD7C1
 		README.md = README.md
 	EndProjectSection
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Rebus.MySql", "Rebus.MySql\Rebus.MySql.csproj", "{007E38CF-F964-4EB1-A22F-E873CC7D4AC0}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Rebus.MySql", "Rebus.MySql\Rebus.MySql.csproj", "{FE4FDE82-15A0-4C95-B640-779E8F72E870}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Rebus.MySql.Tests", "Rebus.MySql.Tests\Rebus.MySql.Tests.csproj", "{A417E160-BE0D-4637-AF96-7EA3C1C8E143}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Rebus.MySql.Tests", "Rebus.MySql.Tests\Rebus.MySql.Tests.csproj", "{7EFCAF69-991E-4991-A03B-077BE4B9952A}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution Items", "{8B2F7563-E5BE-40CE-B5C5-1882C67230DE}"
+	ProjectSection(SolutionItems) = preProject
+		.editorconfig = .editorconfig
+		scripts\build.cmd = scripts\build.cmd
+		scripts\patch_assemblyinfo.cmd = scripts\patch_assemblyinfo.cmd
+		scripts\push.cmd = scripts\push.cmd
+		scripts\release.cmd = scripts\release.cmd
+	EndProjectSection
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -20,16 +29,19 @@ Global
 		Release|Any CPU = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
-		{007E38CF-F964-4EB1-A22F-E873CC7D4AC0}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{007E38CF-F964-4EB1-A22F-E873CC7D4AC0}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{007E38CF-F964-4EB1-A22F-E873CC7D4AC0}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{007E38CF-F964-4EB1-A22F-E873CC7D4AC0}.Release|Any CPU.Build.0 = Release|Any CPU
-		{A417E160-BE0D-4637-AF96-7EA3C1C8E143}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{A417E160-BE0D-4637-AF96-7EA3C1C8E143}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{A417E160-BE0D-4637-AF96-7EA3C1C8E143}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{A417E160-BE0D-4637-AF96-7EA3C1C8E143}.Release|Any CPU.Build.0 = Release|Any CPU
+		{FE4FDE82-15A0-4C95-B640-779E8F72E870}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{FE4FDE82-15A0-4C95-B640-779E8F72E870}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{FE4FDE82-15A0-4C95-B640-779E8F72E870}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{FE4FDE82-15A0-4C95-B640-779E8F72E870}.Release|Any CPU.Build.0 = Release|Any CPU
+		{7EFCAF69-991E-4991-A03B-077BE4B9952A}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{7EFCAF69-991E-4991-A03B-077BE4B9952A}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{7EFCAF69-991E-4991-A03B-077BE4B9952A}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{7EFCAF69-991E-4991-A03B-077BE4B9952A}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {9EE5BF36-7A6F-49D1-8C96-840BF29144FC}
 	EndGlobalSection
 EndGlobal

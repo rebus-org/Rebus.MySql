@@ -1,114 +1,175 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
-using System.Data;
 using System.Linq;
-using System.Reflection;
+using System.Text;
 using System.Threading.Tasks;
-using MySql.Data.MySqlClient;
+using MySqlConnector;
+using Rebus.Bus;
 using Rebus.Exceptions;
 using Rebus.Logging;
+using Rebus.MySql.Sagas.Serialization;
 using Rebus.Sagas;
-using Rebus.Serialization;
-using Rebus.MySql.Extensions;
-using Rebus.MySql.Reflection;
 
 namespace Rebus.MySql.Sagas
 {
     /// <summary>
-    /// Implementation of <see cref="ISagaStorage"/> that uses MySQL to do its thing
+    /// Implementation of <see cref="ISagaStorage"/> that persists saga data as a Newtonsoft JSON.NET-serialized object to a table in MySQL.
+    /// Correlation properties are stored in a separate index table, allowing for looking up saga data instanes based on the configured correlation
+    /// properties
     /// </summary>
-    public class MySqlSagaStorage : ISagaStorage
+    public class MySqlSagaStorage : ISagaStorage, IInitializable
     {
-        static readonly string IdPropertyName = Reflect.Path<ISagaData>(d => d.Id);
+        const int MaximumSagaDataTypeNameLength = 40;
+        const string IdPropertyName = nameof(ISagaData.Id);
+        const bool IndexNullProperties = false;
 
-        readonly ObjectSerializer _objectSerializer = new ObjectSerializer();
-        readonly MySqlConnectionHelper _connectionHelper;
-        readonly string _dataTableName;
-        readonly string _indexTableName;
+        static readonly Encoding JsonTextEncoding = Encoding.UTF8;
+
         readonly ILog _log;
+        readonly IDbConnectionProvider _connectionProvider;
+        readonly ISagaTypeNamingStrategy _sagaTypeNamingStrategy;
+        readonly ISagaSerializer _sagaSerializer;
+        readonly TableName _dataTableName;
+        readonly TableName _indexTableName;
 
         /// <summary>
-        /// Constructs the saga storage
+        /// Constructs the saga storage, using the specified connection provider and tables for persistence.
         /// </summary>
-        public MySqlSagaStorage(MySqlConnectionHelper connectionHelper, string dataTableName, string indexTableName, IRebusLoggerFactory rebusLoggerFactory)
+		public MySqlSagaStorage(IDbConnectionProvider connectionProvider, string dataTableName, string indexTableName, IRebusLoggerFactory rebusLoggerFactory, ISagaTypeNamingStrategy sagaTypeNamingStrategy, ISagaSerializer sagaSerializer)
         {
-            if (connectionHelper == null) throw new ArgumentNullException(nameof(connectionHelper));
+            _connectionProvider = connectionProvider ?? throw new ArgumentNullException(nameof(connectionProvider));
             if (dataTableName == null) throw new ArgumentNullException(nameof(dataTableName));
             if (indexTableName == null) throw new ArgumentNullException(nameof(indexTableName));
             if (rebusLoggerFactory == null) throw new ArgumentNullException(nameof(rebusLoggerFactory));
-            _connectionHelper = connectionHelper;
-            _dataTableName = dataTableName;
-            _indexTableName = indexTableName;
+            _sagaTypeNamingStrategy = sagaTypeNamingStrategy ?? throw new ArgumentNullException(nameof(sagaTypeNamingStrategy));
+
             _log = rebusLoggerFactory.GetLogger<MySqlSagaStorage>();
+            _sagaSerializer = sagaSerializer;
+
+            _dataTableName = TableName.Parse(dataTableName);
+            _indexTableName = TableName.Parse(indexTableName);
         }
 
         /// <summary>
-        /// Finds an already-existing instance of the given saga data type that has a property with the given <paramref name="propertyName" />
-        /// whose value matches <paramref name="propertyValue" />. Returns null if no such instance could be found
+        /// Initializes the storage
+        /// </summary>
+        public void Initialize()
+        {
+        }
+
+        /// <summary>
+        /// Checks to see if the configured tables exist, creating them if necessary
+        /// </summary>
+        public void EnsureTablesAreCreated()
+        {
+            AsyncHelpers.RunSync(EnsureTablesAreCreatedAsync);
+        }
+
+        async Task EnsureTablesAreCreatedAsync()
+        {
+            using (var connection = await _connectionProvider.GetConnection().ConfigureAwait(false))
+            {
+                var tableNames = connection.GetTableNames().ToList();
+                var hasDataTable = tableNames.Contains(_dataTableName);
+                var hasIndexTable = tableNames.Contains(_indexTableName);
+                if (hasDataTable && hasIndexTable)
+                {
+                    return;
+                }
+                if (hasDataTable)
+                {
+                    throw new RebusApplicationException(
+                        $"The saga index table '{_indexTableName.QualifiedName}' does not exist, so the automatic saga schema generation tried to run - but there was already a table named '{_dataTableName.QualifiedName}', which was supposed to be created as the data table");
+                }
+                if (hasIndexTable)
+                {
+                    throw new RebusApplicationException(
+                        $"The saga data table '{_dataTableName.QualifiedName}' does not exist, so the automatic saga schema generation tried to run - but there was already a table named '{_indexTableName.QualifiedName}', which was supposed to be created as the index table");
+                }
+
+                _log.Info("Saga tables {tableName} (data) and {tableName} (index) do not exist - they will be created now", _dataTableName.QualifiedName, _indexTableName.QualifiedName);
+
+                await connection.ExecuteCommands($@"
+                    CREATE TABLE {_dataTableName.QualifiedName} (
+                        `id` CHAR(36) NOT NULL,
+                        `revision` INT NOT NULL,
+                        `data` LONGBLOB NOT NULL,
+                        PRIMARY KEY (`id`)
+                    );
+                    ----
+                    CREATE TABLE {_indexTableName.QualifiedName} (
+                        `saga_type` VARCHAR(40) NOT NULL,
+                        `key` VARCHAR(200) NOT NULL,
+                        `value` VARCHAR(200) NOT NULL,
+                        `saga_id` CHAR(36) NOT NULL,
+                        PRIMARY KEY (`saga_type`, `key`, `value`)
+                    );
+                    ----
+                    CREATE INDEX `idx_saga_id` ON {_indexTableName.QualifiedName} (
+                        `saga_id`
+                    );").ConfigureAwait(false);
+                await connection.Complete().ConfigureAwait(false);
+            }
+        }
+
+        /// <summary>
+        /// Queries the saga index for an instance with the given <paramref name="sagaDataType"/> with a
+        /// a property named <paramref name="propertyName"/> and the value <paramref name="propertyValue"/>
         /// </summary>
         public async Task<ISagaData> Find(Type sagaDataType, string propertyName, object propertyValue)
         {
-            using (var connection = await _connectionHelper.GetConnection())
+            if (sagaDataType == null) throw new ArgumentNullException(nameof(sagaDataType));
+            if (propertyName == null) throw new ArgumentNullException(nameof(propertyName));
+            if (propertyValue == null) throw new ArgumentNullException(nameof(propertyValue));
+
+            using (var connection = await _connectionProvider.GetConnection().ConfigureAwait(false))
             {
                 using (var command = connection.CreateCommand())
                 {
-                    if (propertyName == IdPropertyName)
+                    if (propertyName.Equals(IdPropertyName, StringComparison.OrdinalIgnoreCase))
                     {
                         command.CommandText = $@"
-                            SELECT s.`data`
-                                FROM `{_dataTableName}` s
-                                WHERE s.`id` = @id
-                            ";
-                        command.Parameters.Add(command.CreateParameter("id", DbType.Guid, ToGuid(propertyValue)));
+                            SELECT data 
+                            FROM {_dataTableName.QualifiedName} 
+                            WHERE id = @value 
+                            LIMIT 1";
                     }
                     else
                     {
-                        command.CommandText =
-                            $@"
-                                SELECT s.`data`
-                                    FROM `{_dataTableName}` s
-                                    JOIN `{_indexTableName}` i on s.id = i.saga_id
-                                    WHERE i.`saga_type` = @saga_type AND i.`key` = @key AND i.value = @value;
-                                ";
-
-                        command.Parameters.Add(command.CreateParameter("key", DbType.String, propertyName));
-                        command.Parameters.Add(command.CreateParameter("saga_type", DbType.String, GetSagaTypeName(sagaDataType)));
-                        command.Parameters.Add(command.CreateParameter("value", DbType.String, (propertyValue ?? "").ToString()));
+                        command.CommandText = $@"
+                            SELECT s.data AS data 
+                            FROM {_dataTableName.QualifiedName} s 
+                                JOIN {_indexTableName.QualifiedName} i ON (s.id = i.saga_id) 
+                            WHERE i.`saga_type` = @saga_type AND 
+                                  i.`key` = @key AND 
+                                  i.`value` = @value 
+                            LIMIT 1";
+                        var sagaTypeName = GetSagaTypeName(sagaDataType);
+                        command.Parameters.Add("key", MySqlDbType.VarChar, propertyName.Length).Value = propertyName;
+                        command.Parameters.Add("saga_type", MySqlDbType.VarChar, sagaTypeName.Length).Value = sagaTypeName;
                     }
-
-                    var data = (byte[])await command.ExecuteScalarAsync();
-
-                    if (data == null) return null;
-
-                    try
+                    var correlationPropertyValue = GetCorrelationPropertyValue(propertyValue);
+                    command.Parameters.Add("value", MySqlDbType.VarChar, MathUtil.GetNextPowerOfTwo(correlationPropertyValue.Length)).Value = correlationPropertyValue;
+                    using (var reader = await command.ExecuteReaderAsync().ConfigureAwait(false))
                     {
-                        var sagaData = (ISagaData)_objectSerializer.Deserialize(data);
-
-                        if (!sagaDataType.GetTypeInfo().IsInstanceOfType(sagaData))
+                        if (!await reader.ReadAsync().ConfigureAwait(false)) return null;
+                        var value = GetData(reader);
+                        try
                         {
-                            return null;
+                            var sagaData = _sagaSerializer.DeserializeFromString(sagaDataType, value);
+                            return sagaData;
                         }
-
-                        return sagaData;
-                    }
-                    catch (Exception exception)
-                    {
-                        var message =
-                            $"An error occurred while attempting to deserialize '{data}' into a {sagaDataType}";
-
-                        throw new RebusApplicationException(exception, message);
-                    }
-                    finally
-                    {
-                        connection.Complete();
+                        catch (Exception exception)
+                        {
+                            throw new RebusApplicationException(exception, $"An error occurred while attempting to deserialize '{value}' into a {sagaDataType}");
+                        }
                     }
                 }
             }
         }
 
         /// <summary>
-        /// Inserts the given saga data as a new instance. Throws a <see cref="T:Rebus.Exceptions.ConcurrencyException" /> if another saga data instance
-        /// already exists with a correlation property that shares a value with this saga data.
+        /// Serializes the given <see cref="ISagaData"/> and generates entries in the index for the specified <paramref name="correlationProperties"/>
         /// </summary>
         public async Task Insert(ISagaData sagaData, IEnumerable<ISagaCorrelationProperty> correlationProperties)
         {
@@ -116,301 +177,236 @@ namespace Rebus.MySql.Sagas
             {
                 throw new InvalidOperationException($"Saga data {sagaData.GetType()} has an uninitialized Id property!");
             }
-
             if (sagaData.Revision != 0)
             {
                 throw new InvalidOperationException($"Attempted to insert saga data with ID {sagaData.Id} and revision {sagaData.Revision}, but revision must be 0 on first insert!");
             }
-
-            using (var connection = await _connectionHelper.GetConnection())
+            using (var connection = await _connectionProvider.GetConnection().ConfigureAwait(false))
             {
-                using (var command = connection.CreateCommand())
-                {
-                    command.Parameters.Add(command.CreateParameter("id", DbType.Guid, sagaData.Id));
-                    command.Parameters.Add(command.CreateParameter("revision", DbType.Int32, sagaData.Revision));
-                    command.Parameters.Add(command.CreateParameter("data", DbType.Binary, _objectSerializer.Serialize(sagaData)));
-
-                    command.CommandText =
-                        $@"
-                            INSERT
-                                INTO `{_dataTableName}` (`id`, `revision`, `data`)
-                                VALUES (@id, @revision, @data);
-
-                            ";
-
-                    try
-                    {
-                        await command.ExecuteNonQueryAsync();
-                    }
-                    catch (MySqlException exception)
-                    {
-                        throw new ConcurrencyException(exception, $"Saga data {sagaData.GetType()} with ID {sagaData.Id} in table {_dataTableName} could not be inserted!");
-                    }
-                }
-
-                var propertiesToIndex = GetPropertiesToIndex(sagaData, correlationProperties);
-
-                if (propertiesToIndex.Any())
-                {
-                    await CreateIndex(sagaData, connection, propertiesToIndex);
-                }
-
-                connection.Complete();
-            }
-        }
-
-        /// <summary>
-        /// Updates the already-existing instance of the given saga data, throwing a <see cref="T:Rebus.Exceptions.ConcurrencyException" /> if another
-        /// saga data instance exists with a correlation property that shares a value with this saga data, or if the saga data
-        /// instance no longer exists.
-        /// </summary>
-        public async Task Update(ISagaData sagaData, IEnumerable<ISagaCorrelationProperty> correlationProperties)
-        {
-            using (var connection = await _connectionHelper.GetConnection())
-            {
-                var revisionToUpdate = sagaData.Revision;
-
-                sagaData.Revision++;
-
-                var nextRevision = sagaData.Revision;
-
-                // first, delete existing index
                 using (var command = connection.CreateCommand())
                 {
                     command.CommandText = $@"
-
-                        DELETE FROM `{_indexTableName}` WHERE `saga_id` = @id;
-
-                        ";
-                    command.Parameters.Add(command.CreateParameter("id", DbType.Guid, sagaData.Id));
-                    await command.ExecuteNonQueryAsync();
-                }
-
-                // next, update or insert the saga
-                using (var command = connection.CreateCommand())
-                {
-                    command.Parameters.Add(command.CreateParameter("id", DbType.Guid, sagaData.Id));
-                    command.Parameters.Add(command.CreateParameter("current_revision", DbType.Int32, revisionToUpdate));
-                    command.Parameters.Add(command.CreateParameter("next_revision", DbType.Int32, nextRevision));
-                    command.Parameters.Add(command.CreateParameter("data", DbType.Binary, _objectSerializer.Serialize(sagaData)));
-
-                    command.CommandText =
-                        $@"
-                            UPDATE `{_dataTableName}`
-                                SET `data` = @data, `revision` = @next_revision
-                                WHERE `id` = @id AND `revision` = @current_revision;
-                            ";
-
-                    var rows = await command.ExecuteNonQueryAsync();
-
-                    if (rows == 0)
+                        INSERT INTO {_dataTableName.QualifiedName} (
+                            id, 
+                            revision, 
+                            data
+                        ) VALUES (
+                            @id, 
+                            @revision, 
+                            @data
+                        )";
+                    var data = _sagaSerializer.SerializeToString(sagaData);
+                    command.Parameters.Add("id", MySqlDbType.Guid).Value = sagaData.Id;
+                    command.Parameters.Add("revision", MySqlDbType.Int32).Value = sagaData.Revision;
+                    SetData(command, data);
+                    try
                     {
-                        throw new ConcurrencyException($"Update of saga with ID {sagaData.Id} did not succeed because someone else beat us to it");
+                        await command.ExecuteNonQueryAsync().ConfigureAwait(false);
+                    }
+                    catch (MySqlException sqlException)
+                    {
+                        if (sqlException.ErrorCode == MySqlErrorCode.LockDeadlock)
+                        {
+                            throw new ConcurrencyException($"An exception occurred while attempting to insert saga data with ID {sagaData.Id}");
+                        }
+                        throw;
                     }
                 }
 
                 var propertiesToIndex = GetPropertiesToIndex(sagaData, correlationProperties);
-
                 if (propertiesToIndex.Any())
                 {
-                    await CreateIndex(sagaData, connection, propertiesToIndex);
+                    await CreateIndex(connection, sagaData, propertiesToIndex).ConfigureAwait(false);
                 }
-
-                connection.Complete();
+                await connection.Complete().ConfigureAwait(false);
             }
         }
 
         /// <summary>
-        /// Deletes the saga data instance, throwing a <see cref="T:Rebus.Exceptions.ConcurrencyException" /> if the instance no longer exists
+        /// Updates the given <see cref="ISagaData"/> and generates entries in the index for the specified <paramref name="correlationProperties"/>
+        /// </summary>
+        public async Task Update(ISagaData sagaData, IEnumerable<ISagaCorrelationProperty> correlationProperties)
+        {
+            using (var connection = await _connectionProvider.GetConnection().ConfigureAwait(false))
+            {
+                var revisionToUpdate = sagaData.Revision;
+                sagaData.Revision++;
+                try
+                {
+                    // First, delete existing index
+                    using (var command = connection.CreateCommand())
+                    {
+                        command.CommandText = $@"DELETE FROM {_indexTableName.QualifiedName} WHERE saga_id = @id";
+                        command.Parameters.Add("id", MySqlDbType.Guid).Value = sagaData.Id;
+                        await command.ExecuteNonQueryAsync().ConfigureAwait(false);
+                    }
+
+                    // Next, update or insert the saga
+                    using (var command = connection.CreateCommand())
+                    {
+                        command.CommandText = $@"
+                            UPDATE {_dataTableName.QualifiedName} 
+                            SET data = @data,
+                                revision = @next_revision 
+                            WHERE id = @id AND 
+                                  revision = @current_revision";
+                        var data = _sagaSerializer.SerializeToString(sagaData);
+                        command.Parameters.Add("id", MySqlDbType.Guid).Value = sagaData.Id;
+                        command.Parameters.Add("current_revision", MySqlDbType.Int32).Value = revisionToUpdate;
+                        command.Parameters.Add("next_revision", MySqlDbType.Int32).Value = sagaData.Revision;
+                        SetData(command, data);
+                        var rows = await command.ExecuteNonQueryAsync().ConfigureAwait(false);
+                        if (rows == 0)
+                        {
+                            throw new ConcurrencyException($"Update of saga with ID {sagaData.Id} did not succeed because someone else beat us to it");
+                        }
+                    }
+                    var propertiesToIndex = GetPropertiesToIndex(sagaData, correlationProperties);
+                    if (propertiesToIndex.Any())
+                    {
+                        await CreateIndex(connection, sagaData, propertiesToIndex).ConfigureAwait(false);
+                    }
+                    await connection.Complete().ConfigureAwait(false);
+                }
+                catch
+                {
+                    sagaData.Revision--;
+                    throw;
+                }
+            }
+        }
+
+        /// <summary>
+        /// Deletes the given <see cref="ISagaData"/> and removes all its entries in the index
         /// </summary>
         public async Task Delete(ISagaData sagaData)
         {
-            using (var connection = await _connectionHelper.GetConnection())
+            using (var connection = await _connectionProvider.GetConnection().ConfigureAwait(false))
             {
                 using (var command = connection.CreateCommand())
                 {
-                    command.CommandText =
-                        $@"
-                            DELETE
-                                FROM `{_dataTableName}`
-                                WHERE `id` = @id AND `revision` = @current_revision;
-
-                            ";
-
-                    command.Parameters.Add(command.CreateParameter("id", DbType.Guid, sagaData.Id));
-                    command.Parameters.Add(command.CreateParameter("current_revision", DbType.Int32, sagaData.Revision));
-
-                    var rows = await command.ExecuteNonQueryAsync();
-
+                    command.CommandText = $@"DELETE FROM {_dataTableName.QualifiedName} WHERE id = @id AND revision = @current_revision";
+                    command.Parameters.Add("id", MySqlDbType.Guid).Value = sagaData.Id;
+                    command.Parameters.Add("current_revision", MySqlDbType.Int32).Value = sagaData.Revision;
+                    var rows = await command.ExecuteNonQueryAsync().ConfigureAwait(false);
                     if (rows == 0)
                     {
                         throw new ConcurrencyException($"Delete of saga with ID {sagaData.Id} did not succeed because someone else beat us to it");
                     }
                 }
-
                 using (var command = connection.CreateCommand())
                 {
-                    command.CommandText =
-                        $@"
-                            DELETE
-                                FROM `{_indexTableName}`
-                                WHERE `saga_id` = @id
-
-                            ";
-                    command.Parameters.Add(command.CreateParameter("id", DbType.Guid, sagaData.Id));
-
-                    await command.ExecuteNonQueryAsync();
+                    command.CommandText = $@"DELETE FROM {_indexTableName.QualifiedName} WHERE saga_id = @id";
+                    command.Parameters.Add("id", MySqlDbType.Guid).Value = sagaData.Id;
+                    await command.ExecuteNonQueryAsync().ConfigureAwait(false);
                 }
-
-                connection.Complete();
+                await connection.Complete().ConfigureAwait(false);
             }
-
             sagaData.Revision++;
         }
 
-        /// <summary>
-        /// Checks to see if the configured saga data and saga index table exists. If they both exist, we'll continue, if
-        /// neigther of them exists, we'll try to create them. If one of them exists, we'll throw an error.
-        /// </summary>
-        public async Task EnsureTablesAreCreated()
+        static void SetData(MySqlCommand command, string data)
         {
-            using (var connection = await _connectionHelper.GetConnection())
-            {
-                var tableNames = connection.GetTableNames();
-
-                var hasDataTable = tableNames.Contains(_dataTableName);
-                var hasIndexTable = tableNames.Contains(_indexTableName);
-
-                if (hasDataTable && hasIndexTable)
-                {
-                    return;
-                }
-
-                if (hasDataTable)
-                {
-                    throw new RebusApplicationException(
-                        $"The saga index table '{_indexTableName}' does not exist, so the automatic saga schema generation tried to run - but there was already a table named '{_dataTableName}', which was supposed to be created as the data table");
-                }
-
-                if (hasIndexTable)
-                {
-                    throw new RebusApplicationException(
-                        $"The saga data table '{_dataTableName}' does not exist, so the automatic saga schema generation tried to run - but there was already a table named '{_indexTableName}', which was supposed to be created as the index table");
-                }
-
-                _log.Info("Saga tables '{0}' (data) and '{1}' (index) do not exist - they will be created now", _dataTableName, _indexTableName);
-
-                using (var command = connection.CreateCommand())
-                {
-                    command.CommandText =
-                        $@"
-                            CREATE TABLE `{_dataTableName}` (
-                                `id` CHAR(36) NOT NULL,
-                                `revision` INTEGER NOT NULL,
-                                `data` MEDIUMBLOB NOT NULL,
-                                PRIMARY KEY (`id`)
-                            );";
-
-                    command.ExecuteNonQuery();
-                }
-
-                using (var command = connection.CreateCommand())
-                {
-                    command.CommandText = $@"
-                        CREATE TABLE `{_indexTableName}` (
-                            `saga_type` TEXT NOT NULL,
-                            `key` TEXT NOT NULL,
-                            `value` TEXT NOT NULL,
-                            `saga_id` CHAR(36) NOT NULL,
-                            PRIMARY KEY (`key`(128), `value`(128), `saga_type`(128))
-                        );
-
-                        CREATE INDEX `idx_{_indexTableName}` ON `{_indexTableName}` (`saga_id`);
-                        ";
-
-                    await command.ExecuteNonQueryAsync();
-                }
-
-                connection.Complete();
-            }
+            var bytes = JsonTextEncoding.GetBytes(data);
+            command.Parameters.Add("data", MySqlDbType.VarBinary, MathUtil.GetNextPowerOfTwo(bytes.Length)).Value = bytes;
         }
 
-        private static object ToGuid(object propertyValue)
+        static string GetData(MySqlDataReader reader)
         {
-            return Convert.ChangeType(propertyValue, typeof(Guid));
+            var bytes = (byte[])reader["data"];
+            var value = JsonTextEncoding.GetString(bytes);
+            return value;
         }
 
-        string GetSagaTypeName(Type sagaDataType)
+        static string GetCorrelationPropertyValue(object propertyValue)
         {
-            return sagaDataType.FullName;
+            return (propertyValue ?? "").ToString();
         }
 
-        static List<KeyValuePair<string, string>> GetPropertiesToIndex(ISagaData sagaData, IEnumerable<ISagaCorrelationProperty> correlationProperties)
-        {
-            return correlationProperties
-                .Select(p => p.PropertyName)
-                .Select(path =>
-                {
-                    var value = Reflect.Value(sagaData, path);
-
-                    return new KeyValuePair<string, string>(path, value?.ToString());
-                })
-                .Where(kvp => kvp.Value != null)
-                .ToList();
-        }
-
-        async Task CreateIndex(ISagaData sagaData, MySqlConnection connection, IEnumerable<KeyValuePair<string, string>> propertiesToIndex)
+        async Task CreateIndex(IDbConnection connection, ISagaData sagaData, IEnumerable<KeyValuePair<string, string>> propertiesToIndex)
         {
             var sagaTypeName = GetSagaTypeName(sagaData.GetType());
-            var parameters = propertiesToIndex
+            var propertiesToIndexList = propertiesToIndex.ToList();
+
+            var parameters = propertiesToIndexList
                 .Select((p, i) => new
                 {
                     PropertyName = p.Key,
-                    PropertyValue = p.Value ?? "",
-                    PropertyNameParameter = $"@n{i}",
-                    PropertyValueParameter = $"@v{i}"
+                    PropertyValue = GetCorrelationPropertyValue(p.Value),
+                    PropertyNameParameter = $"n{i}",
+                    PropertyValueParameter = $"v{i}"
                 })
                 .ToList();
 
             // lastly, generate new index
             using (var command = connection.CreateCommand())
             {
-                // generate batch insert with SQL for each entry in the index
+                // Generate batch insert with SQL for each entry in the index
                 var inserts = parameters
-                    .Select(a =>
-                        $@"
-                            INSERT
-                                INTO `{_indexTableName}` (`saga_type`, `key`, `value`, `saga_id`)
-                                VALUES (@saga_type, {a.PropertyNameParameter}, {a.PropertyValueParameter}, @saga_id)
-
-                            ");
-
+                    .Select(a => $@"
+                        INSERT INTO {_indexTableName.QualifiedName}
+                            (`saga_type`, `key`, `value`, `saga_id`) 
+                        VALUES
+                            (@saga_type, @{a.PropertyNameParameter}, @{a.PropertyValueParameter}, @saga_id)")
+                    .ToList();
                 var sql = string.Join(";" + Environment.NewLine, inserts);
-
                 command.CommandText = sql;
-
                 foreach (var parameter in parameters)
                 {
-                    command.Parameters.Add(command.CreateParameter(parameter.PropertyNameParameter, DbType.String, parameter.PropertyName));
-                    command.Parameters.Add(command.CreateParameter(parameter.PropertyValueParameter, DbType.String, parameter.PropertyValue));
+                    var propertyName = parameter.PropertyName;
+                    var propertyValue = parameter.PropertyValue;
+                    command.Parameters.Add(parameter.PropertyNameParameter, MySqlDbType.VarChar, propertyName.Length).Value = propertyName;
+                    command.Parameters.Add(parameter.PropertyValueParameter, MySqlDbType.VarChar, MathUtil.GetNextPowerOfTwo(propertyValue.Length)).Value = propertyValue;
                 }
-
-                command.Parameters.Add(command.CreateParameter("saga_type", DbType.String, sagaTypeName));
-                command.Parameters.Add(command.CreateParameter("saga_id", DbType.Guid, sagaData.Id));
+                command.Parameters.Add("saga_type", MySqlDbType.VarChar, sagaTypeName.Length).Value = sagaTypeName;
+                command.Parameters.Add("saga_id", MySqlDbType.Guid).Value = sagaData.Id;
                 try
                 {
-                    await command.ExecuteNonQueryAsync();
+                    await command.ExecuteNonQueryAsync().ConfigureAwait(false);
                 }
-                catch (MySqlException exception)
+                catch (MySqlException sqlException)
                 {
-                    if (exception.Number == MySqlServerMagic.PrimaryKeyViolationNumber)
+                    if (sqlException.ErrorCode == MySqlErrorCode.MultiplePrimaryKey)
                     {
-                        throw new ConcurrencyException(exception, $"Saga data {sagaData.GetType()} with ID {sagaData.Id} in table {_dataTableName} could not be inserted!");
+                        throw new ConcurrencyException($"Could not update index for saga with ID {sagaData.Id} because of a PK violation - there must already exist a saga instance that uses one of the following correlation properties: {string.Join(", ", propertiesToIndexList.Select(p => $"{p.Key}='{p.Value}'"))}");
                     }
                     throw;
                 }
-
             }
+        }
+
+        string GetSagaTypeName(Type sagaDataType)
+        {
+            var sagaTypeName = _sagaTypeNamingStrategy.GetSagaTypeName(sagaDataType, MaximumSagaDataTypeNameLength);
+            if (sagaTypeName == null)
+            {
+                throw new Exception($"{_sagaTypeNamingStrategy.GetType().FullName} generated a NULL saga type name for {sagaDataType.FullName}.");
+            }
+            if (sagaTypeName.Length > MaximumSagaDataTypeNameLength)
+            {
+                throw new InvalidOperationException(
+                    $@"Sorry, but the maximum length of the name of a saga data class is currently limited to {MaximumSagaDataTypeNameLength} characters!
+This is due to a limitation in MySQL, where compound indexes have a 900 byte upper size limit - and
+since the saga index needs to be able to efficiently query by saga type, key, and value at the same time,
+there's room for only 200 characters as the key, 200 characters as the value, and 40 characters as the
+saga type name.");
+            }
+
+            return sagaTypeName;
+        }
+
+        static List<KeyValuePair<string, string>> GetPropertiesToIndex(ISagaData sagaData,
+            IEnumerable<ISagaCorrelationProperty> correlationProperties)
+        {
+            return correlationProperties
+                .Select(p => p.PropertyName)
+                .Select(path =>
+                {
+                    var value = Reflect.Value(sagaData, path);
+                    return new KeyValuePair<string, string>(path, value?.ToString());
+                })
+                .Where(kvp => IndexNullProperties || kvp.Value != null)
+                .ToList();
         }
     }
 }

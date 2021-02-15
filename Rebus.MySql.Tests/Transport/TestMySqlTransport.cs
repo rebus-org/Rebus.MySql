@@ -1,17 +1,20 @@
-using System;
+﻿using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using NUnit.Framework;
+using Rebus.Config;
 using Rebus.Extensions;
 using Rebus.Logging;
 using Rebus.Messages;
-using Rebus.MySql.Tests.Timeouts;
+using Rebus.MySql;
 using Rebus.MySql.Transport;
 using Rebus.Tests.Contracts;
 using Rebus.Threading.TaskParallelLibrary;
+using Rebus.Time;
 using Rebus.Transport;
 
 namespace Rebus.MySql.Tests.Transport
@@ -19,26 +22,27 @@ namespace Rebus.MySql.Tests.Transport
     [TestFixture, Category(Categories.MySql)]
     public class TestMySqlTransport : FixtureBase
     {
-        readonly string _tableName = "messages" + TestConfig.Suffix;
+        const string QueueName = "input";
         MySqlTransport _transport;
         CancellationToken _cancellationToken;
-        const string QueueName = "input";
 
-        [SetUp]
         protected override void SetUp()
         {
-            MySqlTestHelper.DropTableIfExists(_tableName);
+            MySqlTestHelper.DropAllTables();
+
+            var rebusTime = new DefaultRebusTime();
             var consoleLoggerFactory = new ConsoleLoggerFactory(false);
+            var connectionProvider = new DbConnectionProvider(MySqlTestHelper.ConnectionString, consoleLoggerFactory);
             var asyncTaskFactory = new TplAsyncTaskFactory(consoleLoggerFactory);
-            var connectionHelper = new MySqlConnectionHelper(MySqlTestHelper.ConnectionString);
-            _transport = new MySqlTransport(connectionHelper, _tableName, QueueName, consoleLoggerFactory, asyncTaskFactory, new FakeRebusTime());
+
+            _transport = new MySqlTransport(connectionProvider, QueueName, consoleLoggerFactory, asyncTaskFactory, rebusTime, new MySqlTransportOptions(connectionProvider));
             _transport.EnsureTableIsCreated();
 
             Using(_transport);
 
             _transport.Initialize();
-            _cancellationToken = new CancellationTokenSource().Token;
 
+            _cancellationToken = new CancellationTokenSource().Token;
         }
 
         [Test]
@@ -46,32 +50,19 @@ namespace Rebus.MySql.Tests.Transport
         {
             using (var scope = new RebusTransactionScope())
             {
-                await _transport.Send(QueueName, RecognizableMessage(), AmbientTransactionContext.Current);
+                await _transport.Send(QueueName, RecognizableMessage(), scope.TransactionContext);
 
                 await scope.CompleteAsync();
             }
 
-            TransportMessage transportMessage;
             using (var scope = new RebusTransactionScope())
             {
-                transportMessage = await _transport.Receive(AmbientTransactionContext.Current, _cancellationToken);
+                var transportMessage = await _transport.Receive(scope.TransactionContext, _cancellationToken);
 
                 await scope.CompleteAsync();
+
+                AssertMessageIsRecognized(transportMessage);
             }
-
-            AssertMessageIsRecognized(transportMessage);
-        }
-
-        [Test]
-        public async Task CommitSentMessageToStorage()
-        {
-            using (var scope = new RebusTransactionScope())
-            {
-                await _transport.Send(QueueName, RecognizableMessage(), AmbientTransactionContext.Current);
-                await scope.CompleteAsync();
-            }
-
-            Assert.That(true, Is.True);
         }
 
         [Test]
@@ -79,24 +70,24 @@ namespace Rebus.MySql.Tests.Transport
         {
             using (var scope = new RebusTransactionScope())
             {
-                await _transport.Send(QueueName, RecognizableMessage(), AmbientTransactionContext.Current);
+                await _transport.Send(QueueName, RecognizableMessage(), scope.TransactionContext);
 
+                // deliberately skip this:
                 //await context.Complete();
             }
 
             using (var scope = new RebusTransactionScope())
             {
-                var transportMessage = await _transport.Receive(AmbientTransactionContext.Current, _cancellationToken);
+                var transportMessage = await _transport.Receive(scope.TransactionContext, _cancellationToken);
 
                 Assert.That(transportMessage, Is.Null);
             }
         }
 
-
-        [TestCase(10)]
+        [TestCase(1000)]
         public async Task LotsOfAsyncStuffGoingDown(int numberOfMessages)
         {
-            var receivedMessages = 0;
+            var receivedMessages = 0L;
             var messageIds = new ConcurrentDictionary<int, int>();
 
             Console.WriteLine("Sending {0} messages", numberOfMessages);
@@ -104,39 +95,36 @@ namespace Rebus.MySql.Tests.Transport
             await Task.WhenAll(Enumerable.Range(0, numberOfMessages)
                 .Select(async i =>
                 {
-                    using (var scope = new RebusTransactionScope())
-                    {
-                        await _transport.Send(QueueName, RecognizableMessage(i), AmbientTransactionContext.Current);
-                        await scope.CompleteAsync();
-
-                        messageIds[i] = 0;
-                    }
+                    using var scope = new RebusTransactionScope();
+                    await _transport.Send(QueueName, RecognizableMessage(i), scope.TransactionContext);
+                    await scope.CompleteAsync();
+                    messageIds[i] = 0;
                 }));
 
             Console.WriteLine("Receiving {0} messages", numberOfMessages);
 
-            using (var timer = new Timer((object o) =>
+            using (new Timer(_ => Console.WriteLine("Received: {0} msgs", receivedMessages), null, 0, 1000))
             {
-                Console.WriteLine("Received: {0} msgs", receivedMessages);
-            }, null, TimeSpan.FromMilliseconds(1000), TimeSpan.FromMilliseconds(1000)))
-            {
-                await Task.WhenAll(Enumerable.Range(0, numberOfMessages)
-                    .Select(async i =>
+                var stopwatch = Stopwatch.StartNew();
+
+                while (Interlocked.Read(ref receivedMessages) < numberOfMessages && stopwatch.Elapsed < TimeSpan.FromMinutes(2))
+                {
+                    await Task.WhenAll(Enumerable.Range(0, 10).Select(async __ =>
                     {
-                        using (var scope = new RebusTransactionScope())
+                        using var scope = new RebusTransactionScope();
+                        var msg = await _transport.Receive(scope.TransactionContext, _cancellationToken);
+                        await scope.CompleteAsync();
+
+                        if (msg != null)
                         {
-                            var msg = await _transport.Receive(AmbientTransactionContext.Current, _cancellationToken);
-                            await scope.CompleteAsync();
-
                             Interlocked.Increment(ref receivedMessages);
-
                             var id = int.Parse(msg.Headers["id"]);
-
                             messageIds.AddOrUpdate(id, 1, (_, existing) => existing + 1);
                         }
                     }));
+                }
 
-                await Task.Delay(1000);
+                await Task.Delay(3000);
             }
 
             Assert.That(messageIds.Keys.OrderBy(k => k).ToArray(), Is.EqualTo(Enumerable.Range(0, numberOfMessages).ToArray()));
@@ -146,6 +134,7 @@ namespace Rebus.MySql.Tests.Transport
             if (kvpsDifferentThanOne.Any())
             {
                 Assert.Fail(@"Oh no! the following IDs were not received exactly once:
+
 {0}",
     string.Join(Environment.NewLine, kvpsDifferentThanOne.Select(kvp => $"   {kvp.Key}: {kvp.Value}")));
             }
@@ -153,10 +142,8 @@ namespace Rebus.MySql.Tests.Transport
 
         void AssertMessageIsRecognized(TransportMessage transportMessage)
         {
-            Assert.That(transportMessage, Is.Not.Null);
             Assert.That(transportMessage.Headers.GetValue("recognizzle"), Is.EqualTo("hej"));
         }
-
 
         static TransportMessage RecognizableMessage(int id = 0)
         {

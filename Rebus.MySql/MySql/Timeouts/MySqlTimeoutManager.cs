@@ -1,158 +1,178 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
-using System.Data;
+using System.Linq;
 using System.Threading.Tasks;
+using MySqlConnector;
 using Rebus.Logging;
 using Rebus.Serialization;
-using Rebus.Timeouts;
-using Rebus.MySql.Extensions;
 using Rebus.Time;
-#pragma warning disable 1998
+using Rebus.Timeouts;
+// ReSharper disable AccessToDisposedClosure
 
 namespace Rebus.MySql.Timeouts
 {
     /// <summary>
-    /// Stores deferred messages in MySql until the time where it's appropriate to send them.
+    /// Implementation of <see cref="ITimeoutManager"/> that uses MySQL to store messages until it's time to deliver them.
     /// </summary>
     public class MySqlTimeoutManager : ITimeoutManager
     {
-        readonly DictionarySerializer _dictionarySerializer = new DictionarySerializer();
-        readonly MySqlConnectionHelper _connectionHelper;
-        readonly string _tableName;
-        readonly IRebusTime _rebusTime;
+        static readonly HeaderSerializer HeaderSerializer = new HeaderSerializer();
+        readonly IDbConnectionProvider _connectionProvider;
+        private readonly IRebusTime _rebusTime;
+        readonly TableName _tableName;
         readonly ILog _log;
 
         /// <summary>
-        /// Constructs the timeout manager
+        /// Constructs the timeout manager, using the specified connection provider and table to store the messages until they're due.
         /// </summary>
-        public MySqlTimeoutManager(MySqlConnectionHelper connectionHelper, string tableName, IRebusLoggerFactory rebusLoggerFactory, IRebusTime rebusTime)
+        public MySqlTimeoutManager(IDbConnectionProvider connectionProvider, string tableName, IRebusLoggerFactory rebusLoggerFactory, IRebusTime rebusTime)
         {
+            if (tableName == null) throw new ArgumentNullException(nameof(tableName));
             if (rebusLoggerFactory == null) throw new ArgumentNullException(nameof(rebusLoggerFactory));
-            _connectionHelper = connectionHelper ?? throw new ArgumentNullException(nameof(connectionHelper));
-            _tableName = tableName ?? throw new ArgumentNullException(nameof(tableName));
+
+            _connectionProvider = connectionProvider ?? throw new ArgumentNullException(nameof(connectionProvider));
             _rebusTime = rebusTime ?? throw new ArgumentNullException(nameof(rebusTime));
+
+            _tableName = TableName.Parse(tableName);
             _log = rebusLoggerFactory.GetLogger<MySqlTimeoutManager>();
         }
 
         /// <summary>
-        /// Stores the message with the given headers and body data, delaying it until the specified <paramref name="approximateDueTime" />
+        /// Creates the due messages table if necessary
         /// </summary>
-        public async Task Defer(DateTimeOffset approximateDueTime, Dictionary<string, string> headers, byte[] body)
+        public void EnsureTableIsCreated()
         {
-            using (var connection = await _connectionHelper.GetConnection())
+            try
             {
-                using (var command = connection.CreateCommand())
+                AsyncHelpers.RunSync(EnsureTableIsCreatedAsync);
+            }
+            catch
+            {
+                // if it failed because of a collision between another thread doing the same thing, just try again once:
+                AsyncHelpers.RunSync(EnsureTableIsCreatedAsync);
+            }
+        }
+
+        async Task EnsureTableIsCreatedAsync()
+        {
+            using (var connection = await _connectionProvider.GetConnection().ConfigureAwait(false))
+            {
+                var tableNames = connection.GetTableNames();
+                if (tableNames.Contains(_tableName))
                 {
-                    command.CommandText =
-                        $@"INSERT INTO `{_tableName}` (`due_time`, `headers`, `body`) VALUES (@due_time, @headers, @body)";
-
-                    command.Parameters.Add(command.CreateParameter("due_time", DbType.DateTime, approximateDueTime.ToUniversalTime().DateTime.AddSeconds(-1)));
-                    command.Parameters.Add(command.CreateParameter("headers", DbType.String, _dictionarySerializer.SerializeToString(headers)));
-                    command.Parameters.Add(command.CreateParameter("body", DbType.Binary, body));
-
-                    await command.ExecuteNonQueryAsync().ConfigureAwait(false);
+                    return;
                 }
 
-                connection.Complete();
+                _log.Info("Table {tableName} does not exist - it will be created now", _tableName.QualifiedName);
+
+                await connection.ExecuteCommands($@"
+                    CREATE TABLE {_tableName.QualifiedName} (
+                        `id` BIGINT NOT NULL AUTO_INCREMENT,
+                        `due_time` DATETIME(6) NOT NULL,
+                        `headers` LONGTEXT NOT NULL,
+                        `body` LONGBLOB NOT NULL,
+                        PRIMARY KEY (`id`)
+                    );
+                    ----
+                    CREATE INDEX `idx_due_time` ON {_tableName.QualifiedName} (
+                        `due_time`
+                    );").ConfigureAwait(false);
+                await connection.Complete().ConfigureAwait(false);
             }
         }
 
         /// <summary>
-        /// Gets due messages as of now, given the approximate due time that they were stored with when <see cref="M:Rebus.Timeouts.ITimeoutManager.Defer(System.DateTimeOffset,System.Collections.Generic.Dictionary{System.String,System.String},System.Byte[])" /> was called
+        /// Defers the message to the time specified by <paramref name="approximateDueTime"/> at which point in time the message will be
+        /// returned to whoever calls <see cref="GetDueMessages"/>
         /// </summary>
-        public async Task<DueMessagesResult> GetDueMessages()
+        public async Task Defer(DateTimeOffset approximateDueTime, Dictionary<string, string> headers, byte[] body)
         {
-            var connection = await _connectionHelper.GetConnection();
-
-            try
+            using (var connection = await _connectionProvider.GetConnection().ConfigureAwait(false))
             {
                 using (var command = connection.CreateCommand())
                 {
-                    command.CommandText =
-                        $@"
-                            SELECT `id`,`headers`,`body`
-                            FROM `{_tableName}`
-                            WHERE `due_time` <= @current_time
-                            ORDER BY `due_time`
-                            FOR UPDATE;";
-                    command.Parameters.Add(command.CreateParameter("current_time", DbType.DateTime, _rebusTime.Now.ToUniversalTime().DateTime));
+                    command.CommandText = $@"
+                        INSERT INTO {_tableName.QualifiedName} (
+                            `due_time`,
+                            `headers`,
+                            `body`
+                        ) VALUES (
+                            @due_time,
+                            @headers,
+                            @body
+                        );";
+                    var headersString = HeaderSerializer.SerializeToString(headers);
+                    command.Parameters.Add("due_time", MySqlDbType.DateTime).Value = approximateDueTime;
+                    command.Parameters.Add("headers", MySqlDbType.VarChar, MathUtil.GetNextPowerOfTwo(headersString.Length)).Value = headersString;
+                    command.Parameters.Add("body", MySqlDbType.VarBinary, MathUtil.GetNextPowerOfTwo(body.Length)).Value = body;
+                    await command.ExecuteNonQueryAsync().ConfigureAwait(false);
+                }
+                await connection.Complete().ConfigureAwait(false);
+            }
+        }
 
-                    using (var reader = await command.ExecuteReaderAsync())
+        /// <summary>
+        /// Gets messages due for delivery at the current time
+        /// </summary>
+        public async Task<DueMessagesResult> GetDueMessages()
+        {
+            var connection = await _connectionProvider.GetConnection().ConfigureAwait(false);
+            try
+            {
+                var dueMessages = new List<DueMessage>();
+
+                const int maxDueTimeouts = 1000;
+
+                using (var command = connection.CreateCommand())
+                {
+                    var tableName = _tableName.QualifiedName;
+                    command.CommandText = $@"
+                        SELECT id,
+                               headers,
+                               body
+                        FROM {tableName}
+                        WHERE due_time <= @current_time 
+                        ORDER BY due_time ASC
+                        FOR UPDATE";
+                    command.Parameters.Add("current_time", MySqlDbType.DateTime).Value = _rebusTime.Now;
+
+                    using (var reader = await command.ExecuteReaderAsync().ConfigureAwait(false))
                     {
-                        var dueMessages = new List<DueMessage>();
-
-                        while (reader.Read())
+                        while (await reader.ReadAsync().ConfigureAwait(false))
                         {
-                            var id = (ulong)reader["id"];
-                            var headers = _dictionarySerializer.DeserializeFromString((string) reader["headers"]);
-                            var body = (byte[]) reader["body"];
+                            var id = (long)reader["id"];
+                            var headersString = (string)reader["headers"];
+                            var headers = HeaderSerializer.DeserializeFromString(headersString);
+                            var body = (byte[])reader["body"];
 
-                            dueMessages.Add(new DueMessage(headers, body, async () =>
+                            var sqlTimeout = new DueMessage(headers, body, async () =>
                             {
-                                if (connection != null)
-                                    using (var deleteCommand = connection.CreateCommand())
-                                    {
-                                        deleteCommand.CommandText = $@"DELETE FROM `{_tableName}` WHERE `id` = @id";
-                                        deleteCommand.Parameters.Add(command.CreateParameter("id", DbType.Int64, id));
-                                        await deleteCommand.ExecuteNonQueryAsync();
-                                    }
-                            }));
-                        }
+                                using (var deleteCommand = connection.CreateCommand())
+                                {
+                                    deleteCommand.CommandText = $"DELETE FROM {tableName} WHERE id = {id}";
+                                    await deleteCommand.ExecuteNonQueryAsync().ConfigureAwait(false);
+                                }
+                            });
 
-                        return new DueMessagesResult(dueMessages, async () =>
-                        {
-                            connection.Complete();
-                            connection.Dispose();
-                        });
+                            dueMessages.Add(sqlTimeout);
+
+                            if (dueMessages.Count >= maxDueTimeouts) break;
+                        }
                     }
+
+                    return new DueMessagesResult(dueMessages, async () =>
+                    {
+                        using (connection)
+                        {
+                            await connection.Complete().ConfigureAwait(false);
+                        }
+                    });
                 }
             }
             catch (Exception)
             {
                 connection.Dispose();
                 throw;
-            }
-        }
-
-        /// <summary>
-        /// Checks if the configured timeouts table exists - if it doesn't, it will be created.
-        /// </summary>
-        public async Task EnsureTableIsCreated()
-        {
-            using (var connection = await _connectionHelper.GetConnection())
-            {
-                var tableNames = connection.GetTableNames();
-
-                if (tableNames.Contains(_tableName))
-                {
-                    return;
-                }
-
-                _log.Info("Table '{0}' does not exist - it will be created now", _tableName);
-
-                using (var command = connection.CreateCommand())
-                {
-                    command.CommandText =
-                        $@"
-                            CREATE TABLE `{_tableName}` (
-                                `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT UNIQUE,
-                                `due_time` DATETIME NOT NULL,
-                                `headers` TEXT NULL,
-                                `body` MEDIUMBLOB NULL,
-                                PRIMARY KEY (`id`)
-                            );
-                            ";
-
-                    command.ExecuteNonQuery();
-                }
-
-                using (var command = connection.CreateCommand())
-                {
-                    command.CommandText = $@"CREATE INDEX `idx_{_tableName}` ON `{_tableName}` (`due_time`);";
-                    command.ExecuteNonQuery();
-                }
-
-                connection.Complete();
             }
         }
     }

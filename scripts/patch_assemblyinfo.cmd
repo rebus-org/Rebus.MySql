@@ -9,4 +9,3 @@ if "%version%"=="" (
 ) else (
     "%aversion%" patch -ver %version% -in %projectdir%\Properties\AssemblyInfo.cs -out %projectdir%\Properties\AssemblyInfo_Patch.cs -token $version$
 )
-
