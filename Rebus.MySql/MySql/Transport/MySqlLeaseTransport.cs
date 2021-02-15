@@ -148,13 +148,12 @@ namespace Rebus.MySql.Transport
         /// Handle retrieving a message from the queue, decoding it, and performing any transaction maintenance.
         /// </summary>
         /// <param name="context">Transaction context the receive is operating on</param>
-        /// <param name="cancellationToken">Token to abort processing</param>
         /// <returns>A <seealso cref="TransportMessage"/> or <c>null</c> if no message can be dequeued</returns>
-        protected override async Task<TransportMessage> ReceiveInternal(ITransactionContext context, CancellationToken cancellationToken)
+        protected override TransportMessage ReceiveInternal(ITransactionContext context)
         {
             TransportMessage transportMessage;
 
-            using (var connection = await _connectionProvider.GetConnectionAsync())
+            using (var connection = _connectionProvider.GetConnection())
             {
                 using (var command = connection.CreateCommand())
                 {
@@ -198,13 +197,13 @@ namespace Rebus.MySql.Transport
                     command.Parameters.Add("leased_by", MySqlDbType.VarChar, LeasedByColumnSize).Value = _leasedByFactory();
                     try
                     {
-                        using (var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false))
+                        using (var reader = command.ExecuteReader())
                         {
-                            transportMessage = await ExtractTransportMessageFromReader(reader, cancellationToken).ConfigureAwait(false);
+                            transportMessage = ExtractTransportMessageFromReader(reader);
                             if (transportMessage == null) return null;
 
                             var messageId = (long)reader["id"];
-                            ApplyTransactionSemantics(context, messageId, cancellationToken);
+                            ApplyLeasedTransaction(context, messageId);
                         }
                     }
                     catch (MySqlException exception) when (exception.Number == (int)MySqlErrorCode.LockDeadlock)
@@ -212,14 +211,9 @@ namespace Rebus.MySql.Transport
                         // If we get a transaction deadlock here, simply return null and assume there is nothing to process
                         return null;
                     }
-                    catch (Exception exception) when (cancellationToken.IsCancellationRequested)
-                    {
-                        // ADO.NET does not throw the right exception when the task gets cancelled - therefore we need to do this:
-                        throw new TaskCanceledException("Receive operation was cancelled", exception);
-                    }
                 }
 
-                await connection.CompleteAsync();
+                connection.Complete();
             }
 
             return transportMessage;
@@ -230,13 +224,12 @@ namespace Rebus.MySql.Transport
         /// </summary>
         /// <param name="context">Transaction context of the message processing</param>
         /// <param name="messageId">Identifier of the message currently being processed</param>
-        /// <param name="cancellationToken">Token to abort processing</param>
-        private void ApplyTransactionSemantics(ITransactionContext context, long messageId, CancellationToken cancellationToken)
+        private void ApplyLeasedTransaction(ITransactionContext context, long messageId)
         {
             AutomaticLeaseRenewer renewal = null;
             if (_automaticLeaseRenewal)
             {
-                renewal = new AutomaticLeaseRenewer(this, _receiveTableName.QualifiedName, messageId, _connectionProvider, _automaticLeaseRenewalInterval, _leaseInterval, cancellationToken);
+                renewal = new AutomaticLeaseRenewer(this, _receiveTableName.QualifiedName, messageId, _connectionProvider, _automaticLeaseRenewalInterval, _leaseInterval);
             }
 
             context.OnAborted(
@@ -245,7 +238,7 @@ namespace Rebus.MySql.Transport
                     renewal?.Dispose();
                     try
                     {
-                        AsyncHelpers.RunSync(() => UpdateLease(_connectionProvider, _receiveTableName.QualifiedName, messageId, null, cancellationToken));
+                        UpdateLease(_connectionProvider, _receiveTableName.QualifiedName, messageId, null);
                     }
                     catch (Exception ex)
                     {
@@ -255,17 +248,19 @@ namespace Rebus.MySql.Transport
             );
 
             context.OnCommitted(
-                async ctx =>
+                ctx =>
                 {
                     renewal?.Dispose();
                     try
                     {
-                        await DeleteMessage(messageId);
+                        DeleteMessage(messageId);
                     }
                     catch (Exception ex)
                     {
                         _log.Error(ex, "While Deleting Message");
                     }
+
+                    return Task.CompletedTask;
                 }
             );
         }
@@ -312,10 +307,9 @@ namespace Rebus.MySql.Transport
         /// <param name="tableName">Name of the table the messages are stored in</param>
         /// <param name="messageId">Identifier of the message whose lease is being updated</param>
         /// <param name="leaseInterval">New lease interval. If <c>null</c> the lease will be released</param>
-        /// <param name="cancellationToken">Token to abort processing</param>
-        protected virtual async Task UpdateLease(IDbConnectionProvider connectionProvider, string tableName, long messageId, TimeSpan? leaseInterval, CancellationToken cancellationToken)
+        protected virtual void UpdateLease(IDbConnectionProvider connectionProvider, string tableName, long messageId, TimeSpan? leaseInterval)
         {
-            using (var connection = await connectionProvider.GetConnectionAsync())
+            using (var connection = connectionProvider.GetConnection())
             {
                 using (var command = connection.CreateCommand())
                 {
@@ -340,9 +334,9 @@ namespace Rebus.MySql.Transport
                             WHERE id = @id";
                         command.Parameters.Add("id", MySqlDbType.Int64).Value = messageId;
                     }
-                    await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+                    command.ExecuteNonQuery();
                 }
-                await connection.CompleteAsync();
+                connection.Complete();
             }
         }
 
@@ -356,20 +350,17 @@ namespace Rebus.MySql.Transport
             readonly long _messageId;
             readonly IDbConnectionProvider _connectionProvider;
             readonly TimeSpan _leaseInterval;
-            readonly CancellationToken _cancellationToken;
             Timer _renewTimer;
 
-            public AutomaticLeaseRenewer(MySqlLeaseTransport leaseTransport, string tableName, long messageId, IDbConnectionProvider connectionProvider, TimeSpan renewInterval, TimeSpan leaseInterval, CancellationToken cancellationToken)
+            public AutomaticLeaseRenewer(MySqlLeaseTransport leaseTransport, string tableName, long messageId, IDbConnectionProvider connectionProvider, TimeSpan renewInterval, TimeSpan leaseInterval)
             {
                 _leaseTransport = leaseTransport;
                 _tableName = tableName;
                 _messageId = messageId;
                 _connectionProvider = connectionProvider;
                 _leaseInterval = leaseInterval;
-                _cancellationToken = cancellationToken;
                 _renewTimer = new Timer(RenewLease, null, renewInterval, renewInterval);
             }
-
 
             public void Dispose()
             {
@@ -378,11 +369,11 @@ namespace Rebus.MySql.Transport
                 _renewTimer = null;
             }
 
-            async void RenewLease(object state)
+            void RenewLease(object state)
             {
                 try
                 {
-                    await _leaseTransport.UpdateLease(_connectionProvider, _tableName, _messageId, _leaseInterval, _cancellationToken);
+                    _leaseTransport.UpdateLease(_connectionProvider, _tableName, _messageId, _leaseInterval);
                 }
                 catch (Exception ex)
                 {

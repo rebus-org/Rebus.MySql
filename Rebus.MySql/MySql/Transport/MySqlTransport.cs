@@ -258,7 +258,7 @@ namespace Rebus.MySql.Transport
         {
             using (await _bottleneck.Enter(cancellationToken).ConfigureAwait(false))
             {
-                return await ReceiveInternal(context, cancellationToken).ConfigureAwait(false);
+                return ReceiveInternal(context);
             }
         }
 
@@ -266,13 +266,12 @@ namespace Rebus.MySql.Transport
         /// Handle retrieving a message from the queue, decoding it, and performing any transaction maintenance.
         /// </summary>
         /// <param name="context">Transaction context the receive is operating on</param>
-        /// <param name="cancellationToken">Token to abort processing</param>
         /// <returns>A <seealso cref="TransportMessage"/> or <c>null</c> if no message can be dequeued</returns>
-        protected virtual async Task<TransportMessage> ReceiveInternal(ITransactionContext context, CancellationToken cancellationToken)
+        protected virtual TransportMessage ReceiveInternal(ITransactionContext context)
         {
             TransportMessage transportMessage;
 
-            using (var connection = await _connectionProvider.GetConnectionAsync().ConfigureAwait(false))
+            using (var connection = _connectionProvider.GetConnection())
             {
                 using (var command = connection.CreateCommand())
                 {
@@ -303,9 +302,9 @@ namespace Rebus.MySql.Transport
                         SET @id = null";
                     try
                     {
-                        using (var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false))
+                        using (var reader = command.ExecuteReader())
                         {
-                            transportMessage = await ExtractTransportMessageFromReader(reader, cancellationToken).ConfigureAwait(false);
+                            transportMessage = ExtractTransportMessageFromReader(reader);
                             if (transportMessage == null) return null;
 
                             var messageId = (long)reader["id"];
@@ -317,13 +316,8 @@ namespace Rebus.MySql.Transport
                         // If we get a transaction deadlock here, simply return null and assume there is nothing to process
                         return null;
                     }
-                    catch (Exception exception) when (cancellationToken.IsCancellationRequested)
-                    {
-                        // ADO.NET does not throw the right exception when the task gets cancelled - therefore we need to do this:
-                        throw new TaskCanceledException("Receive operation was cancelled", exception);
-                    }
                 }
-                await connection.CompleteAsync().ConfigureAwait(false);
+                connection.Complete();
             }
 
             return transportMessage;
@@ -333,9 +327,9 @@ namespace Rebus.MySql.Transport
         /// Maps a <seealso cref="MySqlDataReader"/> that's read a result from the message table into a <seealso cref="TransportMessage"/>
         /// </summary>
         /// <returns>A <seealso cref="TransportMessage"/> representing the row or <c>null</c> if no row was available</returns>
-        protected static async Task<TransportMessage> ExtractTransportMessageFromReader(DbDataReader reader, CancellationToken cancellationToken)
+        protected static TransportMessage ExtractTransportMessageFromReader(MySqlDataReader reader)
         {
-            if (await reader.ReadAsync(cancellationToken).ConfigureAwait(false) == false)
+            if (reader.Read() == false)
             {
                 return null;
             }
@@ -353,11 +347,11 @@ namespace Rebus.MySql.Transport
         private void ApplyTransactionSemantics(ITransactionContext context, long messageId)
         {
             context.OnAborted(
-                async ctx =>
+                ctx =>
                 {
                     try
                     {
-                        await ClearProcessing(messageId).ConfigureAwait(false);
+                        ClearProcessing(messageId);
                     }
                     catch (Exception ex)
                     {
@@ -367,16 +361,18 @@ namespace Rebus.MySql.Transport
             );
 
             context.OnCommitted(
-                async ctx =>
+                ctx =>
                 {
                     try
                     {
-                        await DeleteMessage(messageId).ConfigureAwait(false);
+                        DeleteMessage(messageId);
                     }
                     catch (Exception ex)
                     {
                         _log.Error(ex, "While Deleting Message");
                     }
+
+                    return Task.CompletedTask;
                 }
             );
         }
@@ -385,16 +381,16 @@ namespace Rebus.MySql.Transport
         /// Responsible for clearing the processing flag on a message on transaction abort
         /// </summary>
         /// <param name="messageId">Identifier of the message currently being processed</param>
-        private async Task ClearProcessing(long messageId)
+        private void ClearProcessing(long messageId)
         {
-            using (var connection = await _connectionProvider.GetConnectionAsync().ConfigureAwait(false))
+            using (var connection = _connectionProvider.GetConnection())
             {
                 using (var command = connection.CreateCommand())
                 {
                     command.CommandText = $@"UPDATE {_receiveTableName.QualifiedName} SET processing = 0 WHERE id = {messageId}";
-                    await command.ExecuteNonQueryAsync().ConfigureAwait(false);
+                    command.ExecuteNonQuery();
                 }
-                await connection.CompleteAsync().ConfigureAwait(false);
+                connection.Complete();
             }
         }
 
@@ -402,16 +398,16 @@ namespace Rebus.MySql.Transport
         /// Responsible for deleting the message on transaction commit
         /// </summary>
         /// <param name="messageId">Identifier of the message currently being processed</param>
-        protected async Task DeleteMessage(long messageId)
+        protected void DeleteMessage(long messageId)
         {
-            using (var connection = await _connectionProvider.GetConnectionAsync().ConfigureAwait(false))
+            using (var connection = _connectionProvider.GetConnection())
             {
                 using (var command = connection.CreateCommand())
                 {
                     command.CommandText = $@"DELETE FROM {_receiveTableName.QualifiedName} WHERE id = {messageId}";
-                    await command.ExecuteNonQueryAsync().ConfigureAwait(false);
+                    command.ExecuteNonQuery();
                 }
-                await connection.CompleteAsync().ConfigureAwait(false);
+                connection.Complete();
             }
         }
 
