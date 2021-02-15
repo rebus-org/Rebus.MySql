@@ -140,7 +140,7 @@ namespace Rebus.MySql.Transport
                     ----
                     {MySqlMagic.DropIndexIfExistsSql(schema, tableName, "idx_receive")}
                     ----
-                    {MySqlMagic.CreateIndexIfNotExistsSql(schema, tableName, "idx_receive_lease", "visible, expiration, processing, leased_until")}");
+                    {MySqlMagic.CreateIndexIfNotExistsSql(schema, tableName, "idx_receive_lease", "`priority` DESC, `visible` ASC, `id` ASC, `expiration` ASC, `processing` ASC, `leased_until` DESC")}");
             }
         }
 

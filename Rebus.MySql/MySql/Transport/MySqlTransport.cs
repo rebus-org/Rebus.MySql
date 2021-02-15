@@ -159,15 +159,11 @@ namespace Rebus.MySql.Transport
                         );
                         ----
                         CREATE INDEX `idx_receive` ON {table.QualifiedName} (
-                            `visible`,
-                            `expiration`,
-                            `processing`
-                        );
-                        ----
-                        CREATE INDEX `idx_sort` ON {table.QualifiedName} (
                             `priority` DESC,
                             `visible` ASC,
-                            `id` ASC
+                            `id` ASC,
+                            `expiration` ASC,
+                            `processing` ASC
                         );
                         ----
                         CREATE INDEX `idx_expiration` ON {table.QualifiedName} (
