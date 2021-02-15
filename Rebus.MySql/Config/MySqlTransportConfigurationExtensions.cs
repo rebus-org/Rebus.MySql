@@ -31,7 +31,7 @@ namespace Rebus.Config
         /// The table specified by <paramref name="tableName"/> will be used to store messages.
         /// The message table will automatically be created if it does not exist.
         /// </summary>
-        public static void UsePostgreSqlAsOneWayClient(this StandardConfigurer<ITransport> configurer, string connectionString, string tableName)
+        public static void UseMySqlAsOneWayClient(this StandardConfigurer<ITransport> configurer, string connectionString, string tableName)
         {
             Configure(configurer, loggerFactory => new MySqlConnectionHelper(connectionString), tableName, null);
 
