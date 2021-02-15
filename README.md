@@ -1,6 +1,6 @@
 # Rebus.MySqlConnector
 
-[![install from nuget](https://img.shields.io/nuget/v/Rebus.MySqlConnector.svg?style=flat-square)](https://www.nuget.org/packages/Rebus.MySqlConnector)
+[![install from nuget](https://img.shields.io/nuget/v/Rebus.MySqlConnector.svg?style=flat-square)](https://www.nuget.org/packages/AMain.Rebus.MySqlConnector)
 
 Provides MySQL implementations for [Rebus](https://github.com/rebus-org/Rebus) for
 

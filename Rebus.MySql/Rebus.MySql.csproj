@@ -6,7 +6,7 @@
         <TargetFrameworks>net462;netstandard2.0</TargetFrameworks>
         <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
         <Authors>mookid8000, kendallb</Authors>
-        <PackageLicenseUrl>https://raw.githubusercontent.com/rebus-org/Rebus/master/LICENSE.md</PackageLicenseUrl>
+        <PackageLicenseExpression>MIT</PackageLicenseExpression>
         <PackageProjectUrl>https://rebus.fm/what-is-rebus/</PackageProjectUrl>
         <PackageDescription>MySQL based persistence for Rebus</PackageDescription>
         <Copyright>Copyright 2012-2021</Copyright>
@@ -14,7 +14,7 @@
         <PackageIcon>little_rebusbus2_copy-500x500.png</PackageIcon>
         <RepositoryUrl>https://github.com/kendall/Rebus.MySqlConnector</RepositoryUrl>
         <RepositoryType>git</RepositoryType>
-        <PackageId>Rebus.MySql</PackageId>
+        <PackageId>AMain.Rebus.MySqlConnector</PackageId>
     </PropertyGroup>
     <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
         <DebugSymbols>true</DebugSymbols>
@@ -39,7 +39,10 @@
     <ItemGroup>
         <None Include="..\artwork\little_rebusbus2_copy-500x500.png">
             <Pack>True</Pack>
+            <PackagePath>little_rebusbus2_copy-500x500.png</PackagePath>
         </None>
+        <Compile Remove="Properties\AssemblyInfo.cs" />
+        <None Include="Properties\AssemblyInfo.cs" />
     </ItemGroup>
     <ItemGroup>
       <Reference Include="System.Transactions" Condition="'$(TargetFramework)' == 'net462'" />

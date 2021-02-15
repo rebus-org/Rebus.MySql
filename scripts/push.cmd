@@ -7,7 +7,7 @@ if "%version%"=="" (
   goto exit_fail
 )
 
-set reporoot=%~dp0\..
+set reporoot=%~dp0..
 set destination=%reporoot%\deploy
 
 if not exist "%destination%" (
@@ -26,17 +26,11 @@ if not exist "%nuget%" (
   goto exit_fail
 )
 
-
-"%nuget%" push "%destination%\*.%version%.nupkg" -Source nuget.org
+"%nuget%" push "%destination%\*.%version%.nupkg" -Source https://www.nuget.org/api/v2/package
 if %ERRORLEVEL% neq 0 (
   echo NuGet push failed.
   goto exit_fail
 )
-
-
-
-
-
 
 goto exit_success
 :exit_fail

@@ -17,6 +17,10 @@ EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution Items", "{8B2F7563-E5BE-40CE-B5C5-1882C67230DE}"
 	ProjectSection(SolutionItems) = preProject
 		.editorconfig = .editorconfig
+		scripts\build.cmd = scripts\build.cmd
+		scripts\patch_assemblyinfo.cmd = scripts\patch_assemblyinfo.cmd
+		scripts\push.cmd = scripts\push.cmd
+		scripts\release.cmd = scripts\release.cmd
 	EndProjectSection
 EndProject
 Global

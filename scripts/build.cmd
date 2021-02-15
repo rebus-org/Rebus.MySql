@@ -1,7 +1,7 @@
 @echo off
 
 set scriptsdir=%~dp0
-set root=%scriptsdir%\..
+set root=%scriptsdir%..
 set project=%1
 set version=%2
 
@@ -34,11 +34,6 @@ if %ERRORLEVEL% neq 0 (
 )
 
 popd
-
-
-
-
-
 
 goto exit_success
 :exit_fail
