@@ -7,7 +7,6 @@ using System.Threading;
 using System.Threading.Tasks;
 using NUnit.Framework;
 using Rebus.Logging;
-using Rebus.MySql;
 using Rebus.MySql.DataBus;
 using Rebus.Tests.Contracts;
 using Rebus.Tests.Contracts.Extensions;

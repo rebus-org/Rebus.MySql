@@ -2,7 +2,6 @@
 using System.Collections.Generic;
 using Rebus.Config;
 using Rebus.Logging;
-using Rebus.MySql;
 using Rebus.MySql.Transport;
 using Rebus.Tests.Contracts;
 using Rebus.Tests.Contracts.Transports;

@@ -1,5 +1,4 @@
 ﻿using Rebus.Logging;
-using Rebus.MySql;
 using Rebus.MySql.Subscriptions;
 using Rebus.Subscriptions;
 using Rebus.Tests.Contracts.Subscriptions;

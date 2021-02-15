@@ -2,7 +2,6 @@
 using System.Threading.Tasks;
 using Rebus.Auditing.Sagas;
 using Rebus.Logging;
-using Rebus.MySql;
 using Rebus.MySql.Sagas;
 using Rebus.Sagas;
 using Rebus.Serialization;

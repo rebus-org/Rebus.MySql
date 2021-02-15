@@ -7,7 +7,6 @@ using NUnit.Framework;
 using Rebus.Config;
 using Rebus.Logging;
 using Rebus.Messages;
-using Rebus.MySql;
 using Rebus.MySql.Transport;
 using Rebus.Tests.Contracts;
 using Rebus.Threading.TaskParallelLibrary;

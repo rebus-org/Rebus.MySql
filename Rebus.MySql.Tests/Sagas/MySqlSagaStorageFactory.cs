@@ -1,6 +1,5 @@
 ﻿using NUnit.Framework;
 using Rebus.Logging;
-using Rebus.MySql;
 using Rebus.MySql.Sagas;
 using Rebus.MySql.Sagas.Serialization;
 using Rebus.Sagas;

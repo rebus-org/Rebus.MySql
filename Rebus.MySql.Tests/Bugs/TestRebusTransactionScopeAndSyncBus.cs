@@ -7,7 +7,6 @@ using Rebus.Activation;
 using Rebus.Config;
 using Rebus.Extensions;
 using Rebus.Messages;
-using Rebus.MySql;
 using Rebus.MySql.Subscriptions;
 using Rebus.MySql.Transport;
 using Rebus.MySql.Tests.Extensions;

@@ -1,6 +1,5 @@
 ﻿using System;
 using Rebus.Logging;
-using Rebus.MySql;
 using Rebus.MySql.Timeouts;
 using Rebus.Tests.Contracts.Timeouts;
 using Rebus.Timeouts;

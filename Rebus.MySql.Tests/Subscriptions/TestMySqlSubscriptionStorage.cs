@@ -4,7 +4,6 @@ using NUnit.Framework;
 using Rebus.Extensions;
 using Rebus.Logging;
 using Rebus.MySql.Tests.Subscriptions.This.Is.Just.An.Incredibly.Long.And.Silly.Namespace.Name.That.Needs.To.Be.Even.Longer.Because.It.Just.Needs.To.Be.Long.OK.But.Soon.It.Must.Be.Long.Enough.To.Exceed.That.Silly.Limit.In.MySql;
-using Rebus.MySql;
 using Rebus.MySql.Subscriptions;
 using Rebus.Tests.Contracts;
 #pragma warning disable 1998

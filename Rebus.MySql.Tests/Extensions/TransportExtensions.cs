@@ -1,7 +1,6 @@
 ﻿using System.Collections.Generic;
 using System.Threading;
 using Rebus.Messages;
-using Rebus.MySql;
 using Rebus.MySql.Transport;
 using Rebus.Transport;
 

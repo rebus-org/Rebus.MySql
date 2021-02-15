@@ -5,7 +5,6 @@ using NUnit.Framework;
 using Rebus.Activation;
 using Rebus.Config;
 using Rebus.Logging;
-using Rebus.MySql;
 using Rebus.Tests.Contracts;
 using Rebus.Tests.Contracts.Extensions;
 

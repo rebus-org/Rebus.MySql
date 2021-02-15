@@ -3,7 +3,6 @@ using System.Threading.Tasks;
 using System.Transactions;
 using NUnit.Framework;
 using Rebus.Logging;
-using Rebus.MySql;
 
 namespace Rebus.MySql.Tests.Transport
 {

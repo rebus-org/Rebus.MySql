@@ -1,7 +1,6 @@
 ﻿using System;
 using Rebus.DataBus;
 using Rebus.Logging;
-using Rebus.MySql;
 using Rebus.MySql.DataBus;
 using Rebus.Tests.Contracts.DataBus;
 

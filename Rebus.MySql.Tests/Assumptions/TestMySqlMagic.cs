@@ -1,6 +1,5 @@
 ﻿using MySql.Data.MySqlClient;
 using NUnit.Framework;
-using Rebus.MySql;
 
 namespace Rebus.MySql.Tests.Assumptions
 {
