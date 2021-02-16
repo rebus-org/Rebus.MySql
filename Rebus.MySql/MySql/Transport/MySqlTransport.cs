@@ -265,58 +265,59 @@ namespace Rebus.MySql.Transport
         /// <returns>A <seealso cref="TransportMessage"/> or <c>null</c> if no message can be dequeued</returns>
         protected virtual TransportMessage ReceiveInternal(ITransactionContext context)
         {
-            TransportMessage transportMessage;
-
             using (var connection = _connectionProvider.GetConnection())
             {
-                using (var command = connection.CreateCommand())
+                while (true)
                 {
-                    var tableName = _receiveTableName.QualifiedName;
-                    command.CommandText = $@"
-                        SELECT id,
-                               headers,
-                               body
-                        FROM {tableName}
-                        WHERE visible < now(6) AND 
-                              expiration > now(6) AND
-                              processing = 0 
-                        ORDER BY priority DESC, 
-                                 visible ASC, 
-                                 id ASC 
-                        LIMIT 1
-                        FOR UPDATE";
                     try
                     {
-                        // Read the message and extra the data and ID if found
-                        long messageId;
-                        using (var reader = command.ExecuteReader())
+                        TransportMessage transportMessage;
+
+                        using (var command = connection.CreateCommand())
                         {
-                            transportMessage = ExtractTransportMessageFromReader(reader);
-                            if (transportMessage == null) return null;
-                            messageId = (long)reader["id"];
+                            // Read the message and extra the data and ID if found
+                            var tableName = _receiveTableName.QualifiedName;
+                            command.CommandText = $@"
+                                SELECT id,
+                                       headers,
+                                       body
+                                FROM {tableName}
+                                WHERE visible < now(6) AND 
+                                      expiration > now(6) AND
+                                      processing = 0 
+                                ORDER BY priority DESC, 
+                                         visible ASC, 
+                                         id ASC 
+                                LIMIT 1
+                                FOR UPDATE";
+                            long messageId;
+                            using (var reader = command.ExecuteReader())
+                            {
+                                transportMessage = ExtractTransportMessageFromReader(reader);
+                                if (transportMessage == null) return null;
+                                messageId = (long)reader["id"];
+                            }
+
+                            // Mark the message as being processed within the transaction
+                            command.CommandText = $@"
+                                UPDATE {tableName} 
+                                SET processing = 1 
+                                WHERE id = @message_id";
+                            command.Parameters.Add("message_id", MySqlDbType.Int64).Value = messageId;
+                            command.ExecuteNonQuery();
+
+                            // Now apply transaction semantics to clear the message later
+                            ApplyTransactionSemantics(context, messageId);
                         }
-
-                        // Mark the message as being processed within the transaction
-                        command.CommandText = $@"
-                            UPDATE {tableName} 
-                            SET processing = 1 
-                            WHERE id = @message_id";
-                        command.Parameters.Add("message_id", MySqlDbType.Int64).Value = messageId;
-                        command.ExecuteNonQuery();
-
-                        // Now apply transaction semantics to clear the message later
-                        ApplyTransactionSemantics(context, messageId);
+                        connection.Complete();
+                        return transportMessage;
                     }
                     catch (MySqlException exception) when (exception.Number == (int)MySqlErrorCode.LockDeadlock)
                     {
-                        // If we get a transaction deadlock here, simply return null and assume there is nothing to process
-                        return null;
+                        // If we get a transaction deadlock here, keep trying until we succeed
                     }
                 }
-                connection.Complete();
             }
-
-            return transportMessage;
         }
 
         /// <summary>
@@ -381,12 +382,23 @@ namespace Rebus.MySql.Transport
         {
             using (var connection = _connectionProvider.GetConnection())
             {
-                using (var command = connection.CreateCommand())
+                while (true)
                 {
-                    command.CommandText = $@"UPDATE {_receiveTableName.QualifiedName} SET processing = 0 WHERE id = {messageId}";
-                    command.ExecuteNonQuery();
+                    try
+                    {
+                        using (var command = connection.CreateCommand())
+                        {
+                            command.CommandText = $@"UPDATE {_receiveTableName.QualifiedName} SET processing = 0 WHERE id = {messageId}";
+                            command.ExecuteNonQuery();
+                        }
+                        connection.Complete();
+                        return;
+                    }
+                    catch (MySqlException exception) when (exception.Number == (int)MySqlErrorCode.LockDeadlock)
+                    {
+                        // Keep trying if we get a deadlock until it succeeds
+                    }
                 }
-                connection.Complete();
             }
         }
 
@@ -398,12 +410,23 @@ namespace Rebus.MySql.Transport
         {
             using (var connection = _connectionProvider.GetConnection())
             {
-                using (var command = connection.CreateCommand())
+                while (true)
                 {
-                    command.CommandText = $@"DELETE FROM {_receiveTableName.QualifiedName} WHERE id = {messageId}";
-                    command.ExecuteNonQuery();
+                    try
+                    {
+                        using (var command = connection.CreateCommand())
+                        {
+                            command.CommandText = $@"DELETE FROM {_receiveTableName.QualifiedName} WHERE id = {messageId}";
+                            command.ExecuteNonQuery();
+                        }
+                        connection.Complete();
+                        return;
+                    }
+                    catch (MySqlException exception) when (exception.Number == (int)MySqlErrorCode.LockDeadlock)
+                    {
+                        // Keep trying if we get a deadlock until it succeeds
+                    }
                 }
-                connection.Complete();
             }
         }
 
@@ -526,9 +549,9 @@ namespace Rebus.MySql.Transport
                     using (var command = connection.CreateCommand())
                     {
                         command.CommandText = $@"
-                            SELECT id 
+                            SELECT id
                             FROM {_receiveTableName.QualifiedName}
-                            WHERE expiration < now() and 
+                            WHERE expiration < now() and
                                   processing = 0
                             LIMIT 100";
                         using (var reader = await command.ExecuteReaderAsync().ConfigureAwait(false))
