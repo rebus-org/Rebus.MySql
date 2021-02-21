@@ -26,8 +26,6 @@ if exist "%deploydir%" (
 
 pushd %root%
 
-call scripts\patch_assemblyinfo.cmd "%root%\%project%"
-
 dotnet restore
 if %ERRORLEVEL% neq 0 (
 	popd
