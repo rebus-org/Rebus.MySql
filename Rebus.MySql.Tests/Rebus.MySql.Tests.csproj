@@ -10,8 +10,8 @@
   <ItemGroup>
     <ProjectReference Include="..\Rebus.MySql\Rebus.MySql.csproj" />
     <PackageReference Include="Rebus.Tests.Contracts" Version="6.4.0" />
-    <PackageReference Include="microsoft.net.test.sdk" Version="16.7.1" />
-    <PackageReference Include="nunit" Version="3.12.0" />
+    <PackageReference Include="microsoft.net.test.sdk" Version="16.8.3" />
+    <PackageReference Include="nunit" Version="3.13.1" />
     <PackageReference Include="nunit3testadapter" Version="3.17.0">
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
