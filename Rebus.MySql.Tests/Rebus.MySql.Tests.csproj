@@ -1,46 +1,20 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <Project Sdk="Microsoft.NET.Sdk" ToolsVersion="15.0">
-    <PropertyGroup>
-        <OutputType>Library</OutputType>
-        <AppDesignerFolder>Properties</AppDesignerFolder>
-        <TargetFrameworks>netcoreapp3.1</TargetFrameworks>
-        <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
-        <Authors>mookid8000, kendallb</Authors>
-        <PackageLicenseUrl>https://raw.githubusercontent.com/rebus-org/Rebus/master/LICENSE.md</PackageLicenseUrl>
-        <PackageProjectUrl>https://rebus.fm/what-is-rebus/</PackageProjectUrl>
-        <Copyright>Copyright 2012-2021</Copyright>
-        <PackageTags>rebus queue messaging service bus mysql sql</PackageTags>
-        <PackageIcon>little_rebusbus2_copy-500x500.png</PackageIcon>
-        <RepositoryUrl>https://github.com/kendall/Rebus.MySql</RepositoryUrl>
-        <RepositoryType>git</RepositoryType>
-        <PackageId>Rebus.MySql.Tests</PackageId>
-    </PropertyGroup>
-    <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
-        <DebugSymbols>true</DebugSymbols>
-        <DebugType>full</DebugType>
-        <Optimize>false</Optimize>
-        <OutputPath>bin\Debug\</OutputPath>
-        <DefineConstants>DEBUG;TRACE</DefineConstants>
-        <ErrorReport>prompt</ErrorReport>
-        <WarningLevel>4</WarningLevel>
-    </PropertyGroup>
-    <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
-        <DebugType>pdbonly</DebugType>
-        <Optimize>true</Optimize>
-        <OutputPath>bin\Release\</OutputPath>
-        <DefineConstants>RELEASE</DefineConstants>
-        <ErrorReport>prompt</ErrorReport>
-        <WarningLevel>4</WarningLevel>
-        <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
-    </PropertyGroup>
-    <ItemGroup>
-        <ProjectReference Include="..\Rebus.MySql\Rebus.MySql.csproj" />
-        <PackageReference Include="Rebus.Tests.Contracts" Version="6.4.0" />
-        <PackageReference Include="microsoft.net.test.sdk" Version="16.7.1" />
-        <PackageReference Include="nunit" Version="3.12.0" />
-        <PackageReference Include="nunit3testadapter" Version="3.17.0">
-            <PrivateAssets>all</PrivateAssets>
-            <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
-        </PackageReference>
-    </ItemGroup>
+  <PropertyGroup>
+    <OutputType>Library</OutputType>
+    <AppDesignerFolder>Properties</AppDesignerFolder>
+    <TargetFrameworks>net50</TargetFrameworks>
+    <Authors>mookid8000, kendallb</Authors>
+    <Copyright>Copyright 2012</Copyright>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Rebus.MySql\Rebus.MySql.csproj" />
+    <PackageReference Include="Rebus.Tests.Contracts" Version="6.4.0" />
+    <PackageReference Include="microsoft.net.test.sdk" Version="16.7.1" />
+    <PackageReference Include="nunit" Version="3.12.0" />
+    <PackageReference Include="nunit3testadapter" Version="3.17.0">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+  </ItemGroup>
 </Project>

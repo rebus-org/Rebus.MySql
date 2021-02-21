@@ -17,11 +17,11 @@
 ## 2.0.1
 * Update to Rebus 6
 
-## 3.0.0
-* Ported from Rebus.MySqlConnector which was ported from Rebus.SqlConnector
+## 3.0.0-b1
+* New MySQL persistence based on Rebus.SqlServer - thanks [kendallb]
 
 
+[kendallb]: https://github.com/kendallb
 [mvandevy]: https://github.com/mvandevy
 [renemadsen]: https://github.com/renemadsen
 [robvanpamel]: https://github.com/robvanpamel
-[kendallb]: https://github.com/kendallb
