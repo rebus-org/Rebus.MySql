@@ -66,7 +66,7 @@ namespace Rebus.MySql.Tests.Assumptions
             connection.Open();
             var columns = connection.GetColumns("information_schema", "tables");
             Assert.AreEqual("varchar", columns["TABLE_CATALOG"]);
-            Assert.AreEqual("bigint", columns["VERSION"]);
+            Assert.That(columns["VERSION"], Is.EqualTo("bigint").Or.EqualTo("int"));
             Assert.AreEqual("datetime", columns["update_time"]);
 
             // Now create two tables so we can see it works for our tables without a schema prefix

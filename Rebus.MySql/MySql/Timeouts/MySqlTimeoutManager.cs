@@ -102,7 +102,7 @@ namespace Rebus.MySql.Timeouts
                             @body
                         );";
                     var headersString = HeaderSerializer.SerializeToString(headers);
-                    command.Parameters.Add("due_time", MySqlDbType.DateTime).Value = approximateDueTime;
+                    command.Parameters.Add("due_time", MySqlDbType.DateTime).Value = approximateDueTime.UtcDateTime;
                     command.Parameters.Add("headers", MySqlDbType.VarChar, MathUtil.GetNextPowerOfTwo(headersString.Length)).Value = headersString;
                     command.Parameters.Add("body", MySqlDbType.VarBinary, MathUtil.GetNextPowerOfTwo(body.Length)).Value = body;
                     await command.ExecuteNonQueryAsync().ConfigureAwait(false);
@@ -134,7 +134,7 @@ namespace Rebus.MySql.Timeouts
                         WHERE due_time <= @current_time 
                         ORDER BY due_time ASC
                         FOR UPDATE";
-                    command.Parameters.Add("current_time", MySqlDbType.DateTime).Value = _rebusTime.Now;
+                    command.Parameters.Add("current_time", MySqlDbType.DateTime).Value = _rebusTime.Now.UtcDateTime;
 
                     using (var reader = await command.ExecuteReaderAsync().ConfigureAwait(false))
                     {
