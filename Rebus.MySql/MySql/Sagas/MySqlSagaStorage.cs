@@ -1,10 +1,9 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Data.Common;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
-using MySql.Data.MySqlClient;
+using MySqlConnector;
 using Rebus.Bus;
 using Rebus.Exceptions;
 using Rebus.Logging;
@@ -201,7 +200,7 @@ namespace Rebus.MySql.Sagas
                     }
                     catch (MySqlException sqlException)
                     {
-                        if (sqlException.Number == (int)MySqlErrorCode.LockDeadlock)
+                        if (sqlException.ErrorCode == MySqlErrorCode.LockDeadlock)
                         {
                             throw new ConcurrencyException($"An exception occurred while attempting to insert saga data with ID {sagaData.Id}");
                         }
@@ -307,7 +306,7 @@ namespace Rebus.MySql.Sagas
             command.Parameters.Add("data", MySqlDbType.VarBinary, MathUtil.GetNextPowerOfTwo(bytes.Length)).Value = bytes;
         }
 
-        static string GetData(DbDataReader reader)
+        static string GetData(MySqlDataReader reader)
         {
             var bytes = (byte[])reader["data"];
             var value = JsonTextEncoding.GetString(bytes);
@@ -362,7 +361,7 @@ namespace Rebus.MySql.Sagas
                 }
                 catch (MySqlException sqlException)
                 {
-                    if (sqlException.Number == (int)MySqlErrorCode.MultiplePrimaryKey)
+                    if (sqlException.ErrorCode == MySqlErrorCode.MultiplePrimaryKey)
                     {
                         throw new ConcurrencyException($"Could not update index for saga with ID {sagaData.Id} because of a PK violation - there must already exist a saga instance that uses one of the following correlation properties: {string.Join(", ", propertiesToIndexList.Select(p => $"{p.Key}='{p.Value}'"))}");
                     }

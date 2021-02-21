@@ -2,7 +2,7 @@
 using System.Collections.Concurrent;
 using System.Threading;
 using System.Threading.Tasks;
-using MySql.Data.MySqlClient;
+using MySqlConnector;
 using Rebus.Config;
 using Rebus.Logging;
 using Rebus.Messages;
@@ -148,9 +148,13 @@ namespace Rebus.MySql.Transport
         /// Handle retrieving a message from the queue, decoding it, and performing any transaction maintenance.
         /// </summary>
         /// <param name="context">Transaction context the receive is operating on</param>
+        /// <param name="cancellationToken">Cancellation token for the receive operation</param>
         /// <returns>A <seealso cref="TransportMessage"/> or <c>null</c> if no message can be dequeued</returns>
-        protected override TransportMessage ReceiveInternal(ITransactionContext context)
+        public override Task<TransportMessage> Receive(ITransactionContext context, CancellationToken cancellationToken)
         {
+            // NOTE: This function is specifically NOT implemented as async, for performance reasons. Performance
+            // testing has shown that it's actually slower to run this operation async than it is to run it without
+            // the async await operations.
             using (var connection = _connectionProvider.GetConnection())
             {
                 while (true)
@@ -185,7 +189,7 @@ namespace Rebus.MySql.Transport
                             using (var reader = command.ExecuteReader())
                             {
                                 transportMessage = ExtractTransportMessageFromReader(reader);
-                                if (transportMessage == null) return null;
+                                if (transportMessage == null) return Task.FromResult<TransportMessage>(null);
                                 messageId = (long)reader["id"];
                             }
 
@@ -210,9 +214,9 @@ namespace Rebus.MySql.Transport
                         }
 
                         connection.Complete();
-                        return transportMessage;
+                        return Task.FromResult(transportMessage);
                     }
-                    catch (MySqlException exception) when (exception.Number == (int)MySqlErrorCode.LockDeadlock)
+                    catch (MySqlException exception) when (exception.ErrorCode == MySqlErrorCode.LockDeadlock)
                     {
                         // If we get a transaction deadlock here, keep trying until we succeed
                     }
@@ -344,7 +348,7 @@ namespace Rebus.MySql.Transport
                         connection.Complete();
                         return;
                     }
-                    catch (MySqlException exception) when (exception.Number == (int)MySqlErrorCode.LockDeadlock)
+                    catch (MySqlException exception) when (exception.ErrorCode == MySqlErrorCode.LockDeadlock)
                     {
                         // If we get a transaction deadlock here, keep trying until we succeed
                     }
