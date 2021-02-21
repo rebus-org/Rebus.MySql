@@ -1,7 +1,7 @@
 @echo off
 
 set scriptsdir=%~dp0
-set root=%scriptsdir%\..
+set root=%scriptsdir%..
 set deploydir=%root%\deploy
 set project=%1
 set version=%2
@@ -26,6 +26,8 @@ if exist "%deploydir%" (
 
 pushd %root%
 
+call scripts\patch_assemblyinfo.cmd "%root%\%project%"
+
 dotnet restore
 if %ERRORLEVEL% neq 0 (
 	popd
@@ -41,11 +43,6 @@ if %ERRORLEVEL% neq 0 (
 call scripts\push.cmd "%version%"
 
 popd
-
-
-
-
-
 
 goto exit_success
 :exit_fail

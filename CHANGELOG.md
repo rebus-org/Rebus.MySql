@@ -17,7 +17,11 @@
 ## 2.0.1
 * Update to Rebus 6
 
+## 3.0.0
+* Ported from Rebus.MySqlConnector which was ported from Rebus.SqlConnector
+
 
 [mvandevy]: https://github.com/mvandevy
 [renemadsen]: https://github.com/renemadsen
 [robvanpamel]: https://github.com/robvanpamel
+[kendallb]: https://github.com/kendallb

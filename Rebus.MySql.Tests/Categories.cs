@@ -1,7 +1,7 @@
-namespace Rebus.MySql.Tests
+﻿namespace Rebus.MySql.Tests
 {
     public class Categories
     {
-        public const string MySql = "MySql";
+        public const string MySql = "mysql";
     }
 }

@@ -1,29 +1,48 @@
+﻿using NUnit.Framework;
 using Rebus.Logging;
 using Rebus.MySql.Sagas;
+using Rebus.MySql.Sagas.Serialization;
 using Rebus.Sagas;
 using Rebus.Tests.Contracts.Sagas;
 
-namespace Rebus.MySql.Tests.Sagas 
+namespace Rebus.MySql.Tests.Sagas
 {
+    [TestFixture, Category(Categories.MySql)]
+    public class MySqlSagaStorageBasicLoadAndSaveAndFindOperations : BasicLoadAndSaveAndFindOperations<MySqlSagaStorageFactory> { }
+
+    [TestFixture, Category(Categories.MySql)]
+    public class MySqlSagaStorageConcurrencyHandling : ConcurrencyHandling<MySqlSagaStorageFactory> { }
+
+    [TestFixture, Category(Categories.MySql)]
+    public class MySqlSagaStorageSagaIntegrationTests : SagaIntegrationTests<MySqlSagaStorageFactory> { }
+
     public class MySqlSagaStorageFactory : ISagaStorageFactory
     {
+        const string IndexTableName = "RebusSagaIndex";
+        const string DataTableName = "RebusSagaData";
+
         public MySqlSagaStorageFactory()
         {
-            MySqlTestHelper.DropTableIfExists("saga_index");
-            MySqlTestHelper.DropTableIfExists("saga_data");
+            CleanUp();
         }
 
         public ISagaStorage GetSagaStorage()
         {
-            var mySqlSagaStorage = new MySqlSagaStorage(MySqlTestHelper.ConnectionHelper, "saga_data", "saga_index", new ConsoleLoggerFactory(false));
-            mySqlSagaStorage.EnsureTablesAreCreated();
-            return mySqlSagaStorage;
+            var consoleLoggerFactory = new ConsoleLoggerFactory(true);
+            var connectionProvider = new DbConnectionProvider(MySqlTestHelper.ConnectionString, consoleLoggerFactory);
+            var sagaTypeNamingStrategy = new LegacySagaTypeNamingStrategy();
+            var serializer = new DefaultSagaSerializer();
+            var storage = new MySqlSagaStorage(connectionProvider, DataTableName, IndexTableName, consoleLoggerFactory, sagaTypeNamingStrategy, serializer);
+
+            storage.EnsureTablesAreCreated();
+
+            return storage;
         }
 
         public void CleanUp()
         {
-            //MySqlTestHelper.DropTableIfExists("saga_index");
-            //MySqlTestHelper.DropTableIfExists("saga_data");
+            MySqlTestHelper.DropTable(IndexTableName);
+            MySqlTestHelper.DropTable(DataTableName);
         }
     }
 }

@@ -1,5 +1,7 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
+using System.Threading.Tasks;
 using Rebus.Auditing.Sagas;
+using Rebus.Logging;
 using Rebus.MySql.Sagas;
 using Rebus.Sagas;
 using Rebus.Serialization;
@@ -9,52 +11,48 @@ namespace Rebus.MySql.Tests.Sagas
 {
     public class MySqlSnapshotStorageFactory : ISagaSnapshotStorageFactory
     {
-        const string TableName = "SagaSnaps";
+        const string TableName = "SagaSnapshots";
 
         public MySqlSnapshotStorageFactory()
         {
-            MySqlTestHelper.DropTableIfExists(TableName);
+            MySqlTestHelper.DropTable(TableName);
         }
 
         public ISagaSnapshotStorage Create()
         {
-            var snapshotStorage = new MySqlSagaSnapshotStorage(MySqlTestHelper.ConnectionHelper, TableName);
+            var consoleLoggerFactory = new ConsoleLoggerFactory(true);
+            var connectionProvider = new DbConnectionProvider(MySqlTestHelper.ConnectionString, consoleLoggerFactory);
 
-            snapshotStorage.EnsureTableIsCreated();
+            var snapperino = new MySqlSagaSnapshotStorage(connectionProvider, TableName, consoleLoggerFactory);
 
-            return snapshotStorage;
+            snapperino.EnsureTableIsCreated();
+
+            return snapperino;
         }
 
         public IEnumerable<SagaDataSnapshot> GetAllSnapshots()
         {
-            using (var connection = MySqlTestHelper.ConnectionHelper.GetConnection().Result)
+            return LoadStoredCopies(new DbConnectionProvider(MySqlTestHelper.ConnectionString, new ConsoleLoggerFactory(true)), TableName).Result;
+        }
+
+        static async Task<List<SagaDataSnapshot>> LoadStoredCopies(DbConnectionProvider connectionProvider, string tableName)
+        {
+            var storedCopies = new List<SagaDataSnapshot>();
+
+            using var connection = await connectionProvider.GetConnectionAsync();
+            await using (var command = connection.CreateCommand())
             {
-                using (var command = connection.CreateCommand())
+                command.CommandText = $@"SELECT * FROM {tableName}";
+                await using var reader = await command.ExecuteReaderAsync();
+                while (await reader.ReadAsync())
                 {
-                    command.CommandText = $@"SELECT `data`, `metadata` FROM `{TableName}`";
-
-                    using (var reader = command.ExecuteReader())
-                    {
-                        while (reader.Read())
-                        {
-                            var data = (byte[])reader["data"];
-                            var metadataString = (string)reader["metadata"];
-
-                            var objectSerializer = new ObjectSerializer();
-                            var dictionarySerializer = new DictionarySerializer();
-
-                            var sagaData = objectSerializer.Deserialize(data);
-                            var metadata = dictionarySerializer.DeserializeFromString(metadataString);
-
-                            yield return new SagaDataSnapshot
-                            {
-                                SagaData = (ISagaData) sagaData,
-                                Metadata = metadata
-                            };
-                        }
-                    }
+                    var sagaData = (ISagaData)new ObjectSerializer().DeserializeFromString((string)reader["data"]);
+                    var metadata = new HeaderSerializer().DeserializeFromString((string)reader["metadata"]);
+                    storedCopies.Add(new SagaDataSnapshot { SagaData = sagaData, Metadata = metadata });
                 }
             }
+            await connection.CompleteAsync();
+            return storedCopies;
         }
     }
 }

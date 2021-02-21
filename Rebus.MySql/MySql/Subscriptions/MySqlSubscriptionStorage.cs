@@ -1,38 +1,131 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
-using System.Data;
+using System.Linq;
 using System.Threading.Tasks;
 using MySql.Data.MySqlClient;
+using Rebus.Bus;
+using Rebus.Exceptions;
 using Rebus.Logging;
 using Rebus.Subscriptions;
-using Rebus.MySql.Extensions;
 
 namespace Rebus.MySql.Subscriptions
 {
     /// <summary>
-    /// Stores subscriptions in MySql.
+    /// Implementation of <see cref="ISubscriptionStorage"/> that persists subscriptions in a table in MySQL
     /// </summary>
-    public class MySqlSubscriptionStorage : ISubscriptionStorage
+    public class MySqlSubscriptionStorage : ISubscriptionStorage, IInitializable
     {
-        const int DuplicateKeyViolation = 1062;
+        readonly IDbConnectionProvider _connectionProvider;
+        readonly TableName _tableName;
+        readonly ILog _log;
 
-        private readonly MySqlConnectionHelper _connectionHelper;
-
-        private readonly string _tableName;
-
-        private readonly ILog _log;
+        int _topicLength = 200;
+        int _addressLength = 200;
 
         /// <summary>
-        /// Constructs the subscription storage, storing subscriptions in the specified <paramref name="tableName"/>.
-        /// If <paramref name="isCentralized"/> is true, subscribing/unsubscribing will be short-circuited by manipulating
-        /// subscriptions directly, instead of requesting via messages
+        /// Constructs the storage using the specified connection provider and table to store its subscriptions. If the subscription
+        /// storage is shared by all subscribers and publishers, the <paramref name="isCentralized"/> parameter can be set to true
+        /// in order to subscribe/unsubscribe directly instead of sending subscription/unsubscription requests
         /// </summary>
-        public MySqlSubscriptionStorage(MySqlConnectionHelper connectionHelper, string tableName, bool isCentralized, IRebusLoggerFactory rebusLoggerFactory)
+        public MySqlSubscriptionStorage(IDbConnectionProvider connectionProvider, string tableName, bool isCentralized, IRebusLoggerFactory rebusLoggerFactory)
         {
-            _connectionHelper = connectionHelper;
-            _tableName = tableName;
+            _connectionProvider = connectionProvider ?? throw new ArgumentNullException(nameof(connectionProvider));
+            if (tableName == null) throw new ArgumentNullException(nameof(tableName));
+            if (rebusLoggerFactory == null) throw new ArgumentNullException(nameof(rebusLoggerFactory));
+
             IsCentralized = isCentralized;
+
             _log = rebusLoggerFactory.GetLogger<MySqlSubscriptionStorage>();
+            _tableName = TableName.Parse(tableName);
+        }
+
+        /// <summary>
+        /// Initializes the subscription storage by reading the lengths of the [topic] and [address] columns from MySQL
+        /// </summary>
+        public void Initialize()
+        {
+            try
+            {
+                using (var connection = _connectionProvider.GetConnection())
+                {
+                    _topicLength = GetColumnWidth("topic", connection);
+                    _addressLength = GetColumnWidth("address", connection);
+                }
+            }
+            catch (Exception exception)
+            {
+                throw new RebusApplicationException(exception, "Error during schema reflection");
+            }
+        }
+
+        int GetColumnWidth(string columnName, IDbConnection connection)
+        {
+            // Use the current database prefix if one is not provided
+            var schema = _tableName.Schema;
+            if (string.IsNullOrWhiteSpace(schema))
+            {
+                schema = connection.Database;
+            }
+            var sql = $@"
+                SELECT CHARACTER_MAXIMUM_LENGTH
+                FROM INFORMATION_SCHEMA.COLUMNS
+                WHERE TABLE_SCHEMA = '{schema}' AND 
+                      TABLE_NAME = '{_tableName.Name}' AND
+                      COLUMN_NAME = '{columnName}'";
+            try
+            {
+                using (var command = connection.CreateCommand())
+                {
+                    command.CommandText = sql;
+                    return Convert.ToInt32(command.ExecuteScalar());
+                }
+            }
+            catch (Exception exception)
+            {
+                throw new RebusApplicationException(exception, $"Could not get size of the [{columnName}] column from {_tableName} - executed SQL: '{sql}'");
+            }
+        }
+
+        /// <summary>
+        /// Creates the subscriptions table if necessary
+        /// </summary>
+        public void EnsureTableIsCreated()
+        {
+            try
+            {
+                InnerEnsureTableIsCreated();
+            }
+            catch
+            {
+                // if it failed because of a collision between another thread doing the same thing, just try again once:
+                InnerEnsureTableIsCreated();
+            }
+        }
+
+        void InnerEnsureTableIsCreated()
+        {
+            using (var connection = _connectionProvider.GetConnection())
+            {
+                var tableNames = connection.GetTableNames();
+                if (tableNames.Contains(_tableName))
+                {
+                    return;
+                }
+
+                _log.Info("Table {tableName} does not exist - it will be created now", _tableName.QualifiedName);
+
+                using (var command = connection.CreateCommand())
+                {
+                    connection.ExecuteCommands($@"
+                        CREATE TABLE {_tableName.QualifiedName} (
+                            `topic` VARCHAR({_topicLength}) NOT NULL,
+	                        `address` VARCHAR({_addressLength}) NOT NULL,
+                            PRIMARY KEY (`topic`, `address`)
+                        )");
+                    command.ExecuteNonQuery();
+                }
+                connection.Complete();
+            }
         }
 
         /// <summary>
@@ -40,115 +133,94 @@ namespace Rebus.MySql.Subscriptions
         /// </summary>
         public async Task<string[]> GetSubscriberAddresses(string topic)
         {
-            using (var connection = await _connectionHelper.GetConnection())
-            using (var command = connection.CreateCommand())
+            using (var connection = await _connectionProvider.GetConnectionAsync())
             {
-                command.CommandText = $@"select `address` from `{_tableName}` where `topic` = @topic";
-                command.Parameters.Add(command.CreateParameter("topic", DbType.String, topic));
-
-                var endpoints = new List<string>();
-                
-                using (var reader = await command.ExecuteReaderAsync())
+                using (var command = connection.CreateCommand())
                 {
-                    while (reader.Read())
+                    command.CommandText = $@"
+                        SELECT address 
+                        FROM {_tableName.QualifiedName} 
+                        WHERE topic = @topic";
+                    command.Parameters.Add("topic", MySqlDbType.VarChar, _topicLength).Value = topic;
+                    var subscriberAddresses = new List<string>();
+                    using (var reader = await command.ExecuteReaderAsync().ConfigureAwait(false))
                     {
-                        endpoints.Add((string)reader["address"]);
+                        while (await reader.ReadAsync().ConfigureAwait(false))
+                        {
+                            var address = (string)reader["address"];
+                            subscriberAddresses.Add(address);
+                        }
                     }
+                    return subscriberAddresses.ToArray();
                 }
-
-                return endpoints.ToArray();
             }
         }
 
         /// <summary>
-        /// Registers the given <paramref name="subscriberAddress" /> as a subscriber of the given topic
+        /// Registers the given <paramref name="subscriberAddress"/> as a subscriber of the given <paramref name="topic"/>
         /// </summary>
         public async Task RegisterSubscriber(string topic, string subscriberAddress)
         {
-            using (var connection = await _connectionHelper.GetConnection())
-            using (var command = connection.CreateCommand())
+            CheckLengths(topic, subscriberAddress);
+
+            using (var connection = await _connectionProvider.GetConnectionAsync())
             {
-                command.CommandText =
-                    $@"insert into `{_tableName}` (`topic`, `address`) values (@topic, @address)";
-                command.Parameters.Add(command.CreateParameter("topic", DbType.String, topic));
-                command.Parameters.Add(command.CreateParameter("address", DbType.String, subscriberAddress));
-
-                try
+                using (var command = connection.CreateCommand())
                 {
-                    await command.ExecuteNonQueryAsync();
+                    command.CommandText = $@"
+                        INSERT IGNORE INTO {_tableName.QualifiedName} (
+                            topic,
+                            address
+                        ) VALUES (
+                            @topic, 
+                            @address
+                        )";
+                    command.Parameters.Add("topic", MySqlDbType.VarChar, _topicLength).Value = topic;
+                    command.Parameters.Add("address", MySqlDbType.VarChar, _addressLength).Value = subscriberAddress;
+                    await command.ExecuteNonQueryAsync().ConfigureAwait(false);
                 }
-                catch (MySqlException exception) when (exception.Number == DuplicateKeyViolation)
-                {
-                    // it's already there
-                }
+                await connection.CompleteAsync().ConfigureAwait(false);
+            }
+        }
 
-                connection.Complete();
+        void CheckLengths(string topic, string subscriberAddress)
+        {
+            if (topic.Length > _topicLength)
+            {
+                throw new ArgumentException(
+                    $"Cannot register '{subscriberAddress}' as a subscriber of '{topic}' because the length of the topic is greater than {_topicLength} (which is the current MAX length allowed by the current {_tableName} schema)");
+            }
+
+            if (subscriberAddress.Length > _addressLength)
+            {
+                throw new ArgumentException(
+                    $"Cannot register '{subscriberAddress}' as a subscriber of '{topic}' because the length of the subscriber address is greater than {_addressLength} (which is the current MAX length allowed by the current {_tableName} schema)");
             }
         }
 
         /// <summary>
-        /// Unregisters the given <paramref name="subscriberAddress" /> as a subscriber of the given topic
+        /// Unregisters the given <paramref name="subscriberAddress"/> as a subscriber of the given <paramref name="topic"/>
         /// </summary>
         public async Task UnregisterSubscriber(string topic, string subscriberAddress)
         {
-            using (var connection = await _connectionHelper.GetConnection())
-            using (var command = connection.CreateCommand())
+            CheckLengths(topic, subscriberAddress);
+
+            using (var connection = await _connectionProvider.GetConnectionAsync())
             {
-                command.CommandText =
-                    $@"delete from `{_tableName}` where `topic` = @topic and `address` = @address;";
-
-                command.Parameters.Add(command.CreateParameter("topic", DbType.String, topic));
-                command.Parameters.Add(command.CreateParameter("address", DbType.String, subscriberAddress));
-
-                try
-                {
-                    await command.ExecuteNonQueryAsync();
-                }
-                catch (MySqlException exception)
-                {
-                    Console.WriteLine(exception);
-                }
-
-                connection.Complete();
-            }
-        }
-
-        /// <summary>
-        /// Gets whether the subscription storage is centralized and thus supports bypassing the usual subscription request
-        /// (in a fully distributed architecture, a subscription is established by sending a <see cref="T:Rebus.Messages.Control.SubscribeRequest" />
-        /// to the owner of a given topic, who then remembers the subscriber somehow - if the subscription storage is
-        /// centralized, the message exchange can be bypassed, and the subscription can be established directly by
-        /// having the subscriber register itself)
-        /// </summary>
-        public bool IsCentralized { get; }
-
-        /// <summary>
-        /// Creates the subscriptions table if no table with the specified name exists
-        /// </summary>
-        public async Task EnsureTableIsCreated()
-        {
-            using (var connection = await _connectionHelper.GetConnection())
-            {
-                var tableNames = connection.GetTableNames();
-
-                if (tableNames.Contains(_tableName)) return;
-
-                _log.Info($"Table '{_tableName}' does not exist - it will be created now");
-
                 using (var command = connection.CreateCommand())
                 {
-                    command.CommandText =
-                        $@"
-                            CREATE TABLE `{_tableName}` (
-                                `topic` VARCHAR(200) NOT NULL,
-                                `address` VARCHAR(200) NOT NULL,
-                                PRIMARY KEY (`topic`, `address`)
-                            );";
-                    await command.ExecuteNonQueryAsync();
+                    command.CommandText = $@"DELETE FROM {_tableName.QualifiedName} WHERE topic = @topic AND address = @address";
+                    command.Parameters.Add("topic", MySqlDbType.VarChar, _topicLength).Value = topic;
+                    command.Parameters.Add("address", MySqlDbType.VarChar, _addressLength).Value = subscriberAddress;
+                    await command.ExecuteNonQueryAsync().ConfigureAwait(false);
                 }
-
-                connection.Complete();
+                await connection.CompleteAsync().ConfigureAwait(false);
             }
         }
+
+        /// <summary>
+        /// Gets whether this subscription storage is centralized
+        /// </summary>
+        public bool IsCentralized { get; }
     }
 }

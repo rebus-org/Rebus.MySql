@@ -1,16 +1,14 @@
-using System;
+﻿using System;
 using System.Diagnostics;
 using System.Linq;
 using System.Threading.Tasks;
 using NUnit.Framework;
 using Rebus.Activation;
 using Rebus.Config;
+using Rebus.Logging;
 using Rebus.Tests.Contracts;
 using Rebus.Tests.Contracts.Utilities;
-using Rebus.Logging;
-using Rebus.Pipeline;
-using Rebus.MySql.Transport;
-
+// ReSharper disable ArgumentsStyleOther
 
 #pragma warning disable 1998
 
@@ -19,56 +17,71 @@ namespace Rebus.MySql.Tests.Transport
     [TestFixture, Category(Categories.MySql)]
     public class TestMySqlTransportReceivePerformance : FixtureBase
     {
-        BuiltinHandlerActivator _adapter;
-
         const string QueueName = "perftest";
 
-        static readonly string TableName = TestConfig.GetName("Messages");
+        static readonly string TableName = TestConfig.GetName("perftest");
 
-        [SetUp]
         protected override void SetUp()
         {
-            MySqlTestHelper.DropTableIfExists(TableName);
+            MySqlTestHelper.DropTable(TableName);
+        }
 
-            _adapter = Using(new BuiltinHandlerActivator());
+        [TestCase(1000, true)]
+        [TestCase(1000, false)]
+        [TestCase(5000, true)]
+        [TestCase(5000, false)]
+        public async Task CheckReceivePerformance(int messageCount, bool useLeaseBasedTransport)
+        {
+            var adapter = Using(new BuiltinHandlerActivator());
 
-            Configure.With(_adapter)
+            Configure.With(adapter)
                 .Logging(l => l.ColoredConsole(LogLevel.Warn))
-                .Transport(t => t.UseMySql(MySqlTestHelper.ConnectionString, TableName, QueueName))
+                .Transport(t =>
+                {
+                    if (useLeaseBasedTransport)
+                    {
+                        Console.WriteLine("*** Using LEASE-BASED SQL transport ***");
+                        t.UseMySqlInLeaseMode(new MySqlLeaseTransportOptions(MySqlTestHelper.ConnectionString), QueueName);
+                    }
+                    else
+                    {
+                        Console.WriteLine("*** Using NORMAL SQL transport ***");
+                        t.UseMySql(new MySqlTransportOptions(MySqlTestHelper.ConnectionString), QueueName);
+                    }
+                })
                 .Options(o =>
                 {
                     o.SetNumberOfWorkers(0);
                     o.SetMaxParallelism(20);
                 })
                 .Start();
-        }
-
-        [Ignore("temp")]
-        [TestCase(1000)]
-        public async Task NizzleName(int messageCount)
-        {
 
             Console.WriteLine($"Sending {messageCount} messages...");
 
+            var stopwatch = Stopwatch.StartNew();
+
             await Task.WhenAll(Enumerable.Range(0, messageCount)
-                .Select(i => _adapter.Bus.SendLocal($"THIS IS MESSAGE {i}")));
+                .Select(i => adapter.Bus.SendLocal($"THIS IS MESSAGE {i}")));
 
-            var counter = new SharedCounter(messageCount);
+            var elapsedSeconds = stopwatch.Elapsed.TotalSeconds;
 
-            _adapter.Handle<string>(async message => counter.Decrement());
+            Console.WriteLine($"Inserted {messageCount} messages in {elapsedSeconds:0.0} s - that's {messageCount / elapsedSeconds:0.0} msg/s");
+
+            var counter = Using(new SharedCounter(messageCount));
+
+            adapter.Handle<string>(async message => counter.Decrement());
 
             Console.WriteLine("Waiting for messages to be received...");
 
-            var stopwtach = Stopwatch.StartNew();
+            stopwatch = Stopwatch.StartNew();
 
-            _adapter.Bus.Advanced.Workers.SetNumberOfWorkers(3);
+            adapter.Bus.Advanced.Workers.SetNumberOfWorkers(3);
 
-            counter.WaitForResetEvent(messageCount / 500 + 7);
+            counter.WaitForResetEvent(timeoutSeconds: messageCount / 100 + 5);
 
-            var elapsedSeconds = stopwtach.Elapsed.TotalSeconds;
+            elapsedSeconds = stopwatch.Elapsed.TotalSeconds;
 
-            Console.WriteLine(
-                $"{messageCount} messages received in {elapsedSeconds:0.0} s - that's {messageCount/elapsedSeconds:0.0} msg/s");
+            Console.WriteLine($"{messageCount} messages received in {elapsedSeconds:0.0} s - that's {messageCount / elapsedSeconds:0.0} msg/s");
         }
     }
 }
