@@ -1,6 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
-using MySql.Data.MySqlClient;
+using MySqlConnector;
 using Rebus.Exceptions;
 using Rebus.MySql.Tests.Extensions;
 using Rebus.Tests.Contracts;
@@ -94,7 +94,7 @@ namespace Rebus.MySql.Tests
 
                     Console.WriteLine($"SQL OK: {sqlCommand}");
                 }
-                catch (MySqlException exception) when (exception.Number == (int)MySqlErrorCode.BadTable)
+                catch (MySqlException exception) when (exception.ErrorCode == MySqlErrorCode.BadTable)
                 {
                     // it's alright
                 }
@@ -165,7 +165,7 @@ namespace Rebus.MySql.Tests
                     {
                         command.ExecuteNonQuery();
                     }
-                    catch (MySqlException exception) when (exception.Number == (int)MySqlErrorCode.DatabaseCreateExists)
+                    catch (MySqlException exception) when (exception.ErrorCode == MySqlErrorCode.DatabaseCreateExists)
                     {
                     }
 

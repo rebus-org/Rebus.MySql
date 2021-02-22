@@ -1,4 +1,4 @@
-﻿using MySql.Data.MySqlClient;
+﻿using MySqlConnector;
 using NUnit.Framework;
 
 namespace Rebus.MySql.Tests.Assumptions

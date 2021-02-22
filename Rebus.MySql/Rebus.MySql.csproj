@@ -22,7 +22,8 @@
     </None>
   </ItemGroup>
   <ItemGroup>
-    <PackageReference Include="MySql.Data" Version="8.0.21" />
+    <PackageReference Include="Microsoft.CSharp" Version="4.7.0" />
+    <PackageReference Include="MySqlConnector" Version="1.2.1" />
     <PackageReference Include="Rebus" Version="6.4.1" />
   </ItemGroup>
 </Project>

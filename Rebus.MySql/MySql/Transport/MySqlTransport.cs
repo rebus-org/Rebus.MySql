@@ -1,11 +1,10 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Data.Common;
 using System.Diagnostics;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using MySql.Data.MySqlClient;
+using MySqlConnector;
 using Rebus.Bus;
 using Rebus.Config;
 using Rebus.Exceptions;
@@ -58,7 +57,6 @@ namespace Rebus.MySql.Transport
         /// </summary>
         protected readonly ILog _log;
 
-        readonly AsyncBottleneck _bottleneck = new AsyncBottleneck(20);
         readonly IAsyncTask _expiredMessagesCleanupTask;
         readonly bool _autoDeleteQueue;
         bool _disposed;
@@ -108,7 +106,7 @@ namespace Rebus.MySql.Transport
 
             var tableName = TableName.Parse(address);
 
-            EnsureTableIsCreatedAsync(tableName);
+            EnsureTableIsCreated(tableName);
         }
 
         /// <summary>
@@ -116,24 +114,24 @@ namespace Rebus.MySql.Transport
         /// </summary>
         public void EnsureTableIsCreated()
         {
-            EnsureTableIsCreatedAsync(_receiveTableName);
+            EnsureTableIsCreated(_receiveTableName);
         }
 
-        void EnsureTableIsCreatedAsync(TableName table)
+        void EnsureTableIsCreated(TableName table)
         {
             try
             {
-                InnerEnsureTableIsCreatedAsync(table);
+                InnerEnsureTableIsCreated(table);
             }
             catch (Exception)
             {
                 // if it fails the first time, and if it's because of some kind of conflict,
                 // we should run it again and see if the situation has stabilized
-                InnerEnsureTableIsCreatedAsync(table);
+                InnerEnsureTableIsCreated(table);
             }
         }
 
-        void InnerEnsureTableIsCreatedAsync(TableName table)
+        void InnerEnsureTableIsCreated(TableName table)
         {
             using (var connection = _connectionProvider.GetConnection())
             {
@@ -250,21 +248,14 @@ namespace Rebus.MySql.Transport
         /// <summary>
         /// Receives the next message by querying the input queue table for a message with a recipient matching this transport's <see cref="Address"/>
         /// </summary>
-        public async Task<TransportMessage> Receive(ITransactionContext context, CancellationToken cancellationToken)
-        {
-            using (await _bottleneck.Enter(cancellationToken).ConfigureAwait(false))
-            {
-                return ReceiveInternal(context);
-            }
-        }
-
-        /// <summary>
-        /// Handle retrieving a message from the queue, decoding it, and performing any transaction maintenance.
-        /// </summary>
         /// <param name="context">Transaction context the receive is operating on</param>
+        /// <param name="cancellationToken">Cancellation token for the receive operation</param>
         /// <returns>A <seealso cref="TransportMessage"/> or <c>null</c> if no message can be dequeued</returns>
-        protected virtual TransportMessage ReceiveInternal(ITransactionContext context)
+        public virtual Task<TransportMessage> Receive(ITransactionContext context, CancellationToken cancellationToken)
         {
+            // NOTE: This function is specifically NOT implemented as async, for performance reasons. Performance
+            // testing has shown that it's actually slower to run this operation async than it is to run it without
+            // the async await operations.
             using (var connection = _connectionProvider.GetConnection())
             {
                 while (true)
@@ -294,7 +285,7 @@ namespace Rebus.MySql.Transport
                             using (var reader = command.ExecuteReader())
                             {
                                 transportMessage = ExtractTransportMessageFromReader(reader);
-                                if (transportMessage == null) return null;
+                                if (transportMessage == null) return Task.FromResult<TransportMessage>(null);
                                 messageId = (long)reader["id"];
                             }
 
@@ -310,9 +301,9 @@ namespace Rebus.MySql.Transport
                             ApplyTransactionSemantics(context, messageId);
                         }
                         connection.Complete();
-                        return transportMessage;
+                        return Task.FromResult(transportMessage);
                     }
-                    catch (MySqlException exception) when (exception.Number == (int)MySqlErrorCode.LockDeadlock)
+                    catch (MySqlException exception) when (exception.ErrorCode == MySqlErrorCode.LockDeadlock)
                     {
                         // If we get a transaction deadlock here, keep trying until we succeed
                     }
@@ -394,7 +385,7 @@ namespace Rebus.MySql.Transport
                         connection.Complete();
                         return;
                     }
-                    catch (MySqlException exception) when (exception.Number == (int)MySqlErrorCode.LockDeadlock)
+                    catch (MySqlException exception) when (exception.ErrorCode == MySqlErrorCode.LockDeadlock)
                     {
                         // Keep trying if we get a deadlock until it succeeds
                     }
@@ -422,7 +413,7 @@ namespace Rebus.MySql.Transport
                         connection.Complete();
                         return;
                     }
-                    catch (MySqlException exception) when (exception.Number == (int)MySqlErrorCode.LockDeadlock)
+                    catch (MySqlException exception) when (exception.ErrorCode == MySqlErrorCode.LockDeadlock)
                     {
                         // Keep trying if we get a deadlock until it succeeds
                     }
