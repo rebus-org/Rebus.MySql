@@ -21,10 +21,10 @@
 * New MySQL persistence based on Rebus.SqlServer - thanks [kendallb]
 
 ## 3.0.0-b2
-* Ported to open source MySqlConnector which is faster, fully async and under a better license
-* Removed obsolete configuration functions ported from SQL Server
-* Performance improvements for MySQL 5.7 by mixing partial async for reads
-* Removed Async bottleneck which is not really needed
+* Ported to open source MySqlConnector which is faster, fully async and under a better license - thanks [kendallb]
+* Removed obsolete configuration functions ported from SQL Server - thanks [kendallb]
+* Performance improvements for MySQL 5.7 by mixing partial async  - thanks [kendallb]for reads - thanks [kendallb]
+* Removed Async bottleneck which is not really needed - thanks [kendallb]
 
 
 [kendallb]: https://github.com/kendallb
