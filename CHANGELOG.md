@@ -26,6 +26,8 @@
 * Performance improvements for MySQL 5.7 by mixing partial async  - thanks [kendallb]for reads - thanks [kendallb]
 * Removed Async bottleneck which is not really needed - thanks [kendallb]
 
+## 3.0.0-b3
+* Remove MSSQL-specific index limitations - thanks [kendallb]
 
 [kendallb]: https://github.com/kendallb
 [mvandevy]: https://github.com/mvandevy
