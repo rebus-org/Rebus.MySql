@@ -30,7 +30,7 @@ namespace Rebus.MySql.Tests.Sagas
         {
             var consoleLoggerFactory = new ConsoleLoggerFactory(true);
             var connectionProvider = new DbConnectionProvider(MySqlTestHelper.ConnectionString, consoleLoggerFactory);
-            var sagaTypeNamingStrategy = new LegacySagaTypeNamingStrategy();
+            var sagaTypeNamingStrategy = new DefaultSagaTypeNamingStrategy();
             var serializer = new DefaultSagaSerializer();
             var storage = new MySqlSagaStorage(connectionProvider, DataTableName, IndexTableName, consoleLoggerFactory, sagaTypeNamingStrategy, serializer);
 

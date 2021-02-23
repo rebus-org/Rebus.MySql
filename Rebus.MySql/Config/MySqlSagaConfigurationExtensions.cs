@@ -122,7 +122,7 @@ namespace Rebus.Config
         }
 
         /// <summary>
-        /// Get the registered implementation of <seealso cref="ISagaTypeNamingStrategy"/> or the default <seealso cref="LegacySagaTypeNamingStrategy"/> if one is not configured
+        /// Get the registered implementation of <seealso cref="ISagaTypeNamingStrategy"/> or the default <seealso cref="DefaultSagaTypeNamingStrategy"/> if one is not configured
         /// </summary>
         static ISagaTypeNamingStrategy GetSagaTypeNamingStrategy(IResolutionContext resolutionContext, IRebusLoggerFactory rebusLoggerFactory)
         {
@@ -130,12 +130,7 @@ namespace Rebus.Config
             {
                 return resolutionContext.Get<ISagaTypeNamingStrategy>();
             }
-
-            var logger = rebusLoggerFactory.GetLogger<MySqlSagaStorage>();
-
-            logger.Debug($"An implementation of {nameof(ISagaTypeNamingStrategy)} was not registered. A default, backward compatible, implementation will be used ({nameof(LegacySagaTypeNamingStrategy)}).");
-
-            return new LegacySagaTypeNamingStrategy();
+            return new DefaultSagaTypeNamingStrategy();
         }
     }
 }
