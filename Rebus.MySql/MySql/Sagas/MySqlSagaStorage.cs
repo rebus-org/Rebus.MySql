@@ -19,7 +19,7 @@ namespace Rebus.MySql.Sagas
     /// </summary>
     public class MySqlSagaStorage : ISagaStorage, IInitializable
     {
-        const int MaximumSagaDataTypeNameLength = 40;
+        const int MaximumSagaDataTypeNameLength = 255;
         const string IdPropertyName = nameof(ISagaData.Id);
         const bool IndexNullProperties = false;
 
@@ -93,7 +93,7 @@ namespace Rebus.MySql.Sagas
                     );
                     ----
                     CREATE TABLE {_indexTableName.QualifiedName} (
-                        `saga_type` VARCHAR(40) NOT NULL,
+                        `saga_type` VARCHAR({MaximumSagaDataTypeNameLength}) NOT NULL,
                         `key` VARCHAR(200) NOT NULL,
                         `value` VARCHAR(200) NOT NULL,
                         `saga_id` CHAR(36) NOT NULL,
@@ -379,12 +379,7 @@ namespace Rebus.MySql.Sagas
             }
             if (sagaTypeName.Length > MaximumSagaDataTypeNameLength)
             {
-                throw new InvalidOperationException(
-                    $@"Sorry, but the maximum length of the name of a saga data class is currently limited to {MaximumSagaDataTypeNameLength} characters!
-This is due to a limitation in MySQL, where compound indexes have a 900 byte upper size limit - and
-since the saga index needs to be able to efficiently query by saga type, key, and value at the same time,
-there's room for only 200 characters as the key, 200 characters as the value, and 40 characters as the
-saga type name.");
+                throw new InvalidOperationException($@"Sorry, but the maximum length of the name of a saga data class is currently limited to {MaximumSagaDataTypeNameLength} characters!");
             }
 
             return sagaTypeName;
