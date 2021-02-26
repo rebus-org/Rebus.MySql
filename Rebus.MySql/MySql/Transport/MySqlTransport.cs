@@ -177,7 +177,40 @@ namespace Rebus.MySql.Transport
                 var tableNames = connection.GetTableNames();
                 if (tableNames.Contains(table))
                 {
-                    _log.Info("Database already contains a table named {tableName} - will not create anything", table.QualifiedName);
+                    // Use the current database prefix if one is not provided
+                    var schema = table.Schema;
+                    if (string.IsNullOrWhiteSpace(schema))
+                    {
+                        schema = connection.Database;
+                    }
+                    var tableName = table.Name;
+
+                    // Check if the schema needs to be upgraded
+                    var columns = connection.GetColumns(schema, tableName);
+                    if (!columns.ContainsKey("processing") &&
+                        columns.ContainsKey("leased_until") &&
+                        columns.ContainsKey("leased_by") &&
+                        columns.ContainsKey("leased_at"))
+                    {
+                        _log.Info("Database already contains a table named {tableName} - will not create anything", table.QualifiedName);
+                    }
+                    else
+                    {
+                        connection.ExecuteCommands($@"
+                            {MySqlMagic.DropColumnIfExistsSql(schema, tableName, "processing")}
+                            ----
+                            {MySqlMagic.CreateColumnIfNotExistsSql(schema, tableName, "leased_until", "datetime(6) NULL")}
+                            ----
+                            {MySqlMagic.CreateColumnIfNotExistsSql(schema, tableName, "leased_by", $"varchar({LeasedByColumnSize}) NULL")}
+                            ----
+                            {MySqlMagic.CreateColumnIfNotExistsSql(schema, tableName, "leased_at", "datetime(6) NULL")}
+                            ----
+                            {MySqlMagic.DropIndexIfExistsSql(schema, tableName, "idx_receive")}
+                            ----
+                            {MySqlMagic.DropIndexIfExistsSql(schema, tableName, "idx_receive_lease")}
+                            ----
+                            {MySqlMagic.CreateIndexIfNotExistsSql(schema, tableName, "idx_receive", "`priority` DESC, `visible` ASC, `id` ASC, `expiration` ASC, `leased_until` DESC")}");
+                    }
                 }
                 else
                 {
