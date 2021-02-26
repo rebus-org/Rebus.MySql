@@ -140,7 +140,7 @@ namespace Rebus.MySql.Transport
                     ----
                     {MySqlMagic.DropIndexIfExistsSql(schema, tableName, "idx_receive")}
                     ----
-                    {MySqlMagic.CreateIndexIfNotExistsSql(schema, tableName, "idx_receive_lease", "`priority` DESC, `visible` ASC, `id` ASC, `expiration` ASC, `processing` ASC, `leased_until` DESC")}");
+                    {MySqlMagic.CreateIndexIfNotExistsSql(schema, tableName, "idx_receive_lease", "`priority` DESC, `visible` ASC, `id` ASC, `expiration` ASC, `leased_until` DESC")}");
             }
         }
 
@@ -174,7 +174,6 @@ namespace Rebus.MySql.Transport
                                 FROM {tableName} 
                                 WHERE visible < now(6) AND 
                                       expiration > now(6) AND 
-                                      processing = 0 AND 
                                       1 = CASE
 					                    WHEN leased_until is null then 1
 					                    WHEN date_add(date_add(leased_until, INTERVAL @lease_tolerance_total_seconds SECOND), INTERVAL @lease_tolerance_microseconds MICROSECOND) < now(6) THEN 1
@@ -196,8 +195,7 @@ namespace Rebus.MySql.Transport
                             // Mark the message as being processed within the transaction
                             command.CommandText = $@"
                                 UPDATE {tableName} 
-                                SET processing = 1,
-                                    leased_until = date_add(date_add(now(6), INTERVAL @lease_total_seconds SECOND), INTERVAL @lease_microseconds MICROSECOND),
+                                SET leased_until = date_add(date_add(now(6), INTERVAL @lease_total_seconds SECOND), INTERVAL @lease_microseconds MICROSECOND),
                                     leased_at = now(6),
                                     leased_by = @leased_by
                                 WHERE id = @message_id";
@@ -336,8 +334,7 @@ namespace Rebus.MySql.Transport
                             {
                                 command.CommandText = $@"
                                     UPDATE {tableName}
-                                    SET processing = 0,
-                                        leased_until = null,
+                                    SET leased_until = null,
                                         leased_by = null,
                                         leased_at = null
                                     WHERE id = @id";

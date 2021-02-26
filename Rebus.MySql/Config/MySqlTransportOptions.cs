@@ -60,6 +60,11 @@ namespace Rebus.Config
         public bool AutoDeleteQueue { get; internal set; } = false;
 
         /// <summary>
+        /// Set to the maximum amount of time an unprocessed message can remain unacknowledged before it is replayed. Defaults to 10 seconds.
+        /// </summary>
+        public TimeSpan MessageAckTimeout  { get; internal set; } = TimeSpan.FromSeconds(10);
+
+        /// <summary>
         /// Gets the delay between executions of the background cleanup task
         /// </summary>
         internal TimeSpan? ExpiredMessagesCleanupInterval { get; set; }

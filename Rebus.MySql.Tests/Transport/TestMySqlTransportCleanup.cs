@@ -32,9 +32,14 @@ namespace Rebus.MySql.Tests.Transport
 
             _loggerFactory = new ListLoggerFactory(outputToConsole: true);
 
+            // Force the ACK timeout to a longer value for this test, as we specifically make the handlers take a long time
+            var ackTimeout = TimeSpan.FromMinutes(2);
             _starter = Configure.With(_activator)
                 .Logging(l => l.Use(_loggerFactory))
-                .Transport(t => t.UseMySql(new MySqlTransportOptions(MySqlTestHelper.ConnectionString), queueName))
+                .Transport(t =>
+                {
+                    t.UseMySql(new MySqlTransportOptions(MySqlTestHelper.ConnectionString).SetMessageAckTimeout(ackTimeout), queueName);
+                })
                 .Create();
         }
 

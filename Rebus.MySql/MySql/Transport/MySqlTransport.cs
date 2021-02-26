@@ -58,6 +58,7 @@ namespace Rebus.MySql.Transport
         protected readonly ILog _log;
 
         readonly IAsyncTask _expiredMessagesCleanupTask;
+        readonly TimeSpan _messageAckTimeout;
         readonly bool _autoDeleteQueue;
         bool _disposed;
 
@@ -80,6 +81,7 @@ namespace Rebus.MySql.Transport
 
             _expiredMessagesCleanupTask = asyncTaskFactory.Create("ExpiredMessagesCleanup", PerformExpiredMessagesCleanupCycle, intervalSeconds: intervalSeconds);
             _autoDeleteQueue = options.AutoDeleteQueue;
+            _messageAckTimeout = options.MessageAckTimeout;
         }
 
         /// <summary>
@@ -536,7 +538,6 @@ namespace Rebus.MySql.Transport
                     // on the entire table. If we try to do something like delete from blah where expiration < now()
                     // that will take a lock on the entire table which will stall out until the messages are processed.
                     int affectedRows = 0;
-                    var messageIds = new List<long>();
                     using (var command = connection.CreateCommand())
                     {
                         command.CommandText = $@"
@@ -545,6 +546,7 @@ namespace Rebus.MySql.Transport
                             WHERE expiration < now() and
                                   processing = 0
                             LIMIT 100";
+                        var messageIds = new List<long>();
                         using (var reader = await command.ExecuteReaderAsync().ConfigureAwait(false))
                         {
                             while (await reader.ReadAsync().ConfigureAwait(false))
@@ -556,11 +558,37 @@ namespace Rebus.MySql.Transport
                         // If we got any messages to delete, clean them up in a single delete statement
                         if (messageIds.Count > 0)
                         {
-                            command.CommandText = $"DELETE FROM {_receiveTableName.QualifiedName} where id in ({string.Join(",", messageIds)})";
+                            command.CommandText = $"DELETE FROM {_receiveTableName.QualifiedName} WHERE id in ({string.Join(",", messageIds)})";
+                            affectedRows = await command.ExecuteNonQueryAsync().ConfigureAwait(false);
+                        }
+
+                        // Check for any dead messages and release them again. This is any message where the visibility is now
+                        // older than our message ACK timeout.
+                        command.CommandText = $@"
+                            SELECT id
+                            FROM {_receiveTableName.QualifiedName}
+                            WHERE visible < date_sub(now(6), INTERVAL @message_timeout_seconds SECOND) and
+                                  processing = 1
+                            LIMIT 100";
+                        command.Parameters.Add("message_timeout_seconds", MySqlDbType.Int32).Value = (int)_messageAckTimeout.TotalSeconds;
+                        messageIds.Clear();
+                        using (var reader = await command.ExecuteReaderAsync().ConfigureAwait(false))
+                        {
+                            while (await reader.ReadAsync().ConfigureAwait(false))
+                            {
+                                messageIds.Add((long)reader["id"]);
+                            }
+                        }
+
+                        // If we got any messages to delete, clean them up in a single delete statement
+                        if (messageIds.Count > 0)
+                        {
+                            command.CommandText = $"UPDATE {_receiveTableName.QualifiedName} SET processing = 0 WHERE id in ({string.Join(",", messageIds)})";
                             affectedRows = await command.ExecuteNonQueryAsync().ConfigureAwait(false);
                         }
                     }
 
+                    // Commit all the changes
                     results += affectedRows;
                     await connection.CompleteAsync().ConfigureAwait(false);
 
