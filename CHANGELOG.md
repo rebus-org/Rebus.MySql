@@ -29,6 +29,9 @@
 ## 3.0.0-b3
 * Remove MSSQL-specific index limitations - thanks [kendallb]
 
+## 3.0.0-b5
+* Removed leased based transport and made it the default due to how MySQL works with row locking - thanks [kendallb]
+
 [kendallb]: https://github.com/kendallb
 [mvandevy]: https://github.com/mvandevy
 [renemadsen]: https://github.com/renemadsen

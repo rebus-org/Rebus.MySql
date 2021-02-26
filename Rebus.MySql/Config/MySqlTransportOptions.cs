@@ -63,5 +63,27 @@ namespace Rebus.Config
         /// Gets the delay between executions of the background cleanup task
         /// </summary>
         internal TimeSpan? ExpiredMessagesCleanupInterval { get; set; }
+
+        /// <summary>
+        /// If <c>null</c> will default to <seealso cref="MySqlTransport.DefaultLeaseTime"/>. Specifies how long a worker will request to keep a message. Higher values require less database communication but increase latency of a message being processed if a worker dies
+        /// </summary>
+        public TimeSpan? LeaseInterval { get; internal set; }
+
+        /// <summary>
+        /// If <c>null</c> will default to <seealso cref="MySqlTransport.DefaultLeaseTime"/>. Specifies how long a worker will request to keep a message. Higher values require less database communication but increase latency of a message being processed if a worker dies
+        /// </summary>
+        public TimeSpan? LeaseTolerance { get; internal set; }
+
+        /// <summary>
+        /// If not <c>null</c> then workers will automatically renew the lease they have acquired whilst they're still processing the message. This value Specifies how frequently
+        /// a lease will be renewed whilst the worker is processing a message. Lower values decrease the chance of other workers processing the same message but increase DB
+        /// communication. A value 50% of <seealso cref="LeaseInterval"/> should be appropriate.
+        /// </summary>
+        public TimeSpan? LeaseAutoRenewInterval { get; internal set; }
+
+        /// <summary>
+        /// If non-<c>null</c> a factory which returns a string identifying this worker when it leases a message. If <c>null></c> the current machine name is used
+        /// </summary>
+        public Func<string> LeasedByFactory { get; internal set; }
     }
 }

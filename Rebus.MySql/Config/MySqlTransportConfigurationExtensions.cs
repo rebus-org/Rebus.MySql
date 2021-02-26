@@ -1,5 +1,4 @@
 ﻿using System;
-using System.Threading.Tasks;
 using Rebus.Injection;
 using Rebus.Logging;
 using Rebus.Pipeline;
@@ -19,83 +18,9 @@ namespace Rebus.Config
     public static class MySqlTransportConfigurationExtensions
     {
         /// <summary>
-        /// Configures Rebus to use MySQL as its transport. Unlike the <c>UseMySql</c> calls the leased version of the MySQL
-        /// transport does not hold a transaction open for the entire duration of the message handling. Instead it marks a
-        /// message as being "leased" for a period of time. If the lease has expired then a worker is permitted to acquire the that
-        /// message again and try reprocessing
-        /// </summary>
-        /// <param name="configurer">Static to extend</param>
-        /// <param name="transportOptions">Options controlling the transport setup</param>
-        /// <param name="inputQueueName">Queue name to process messages from</param>
-        /// <returns>Transport options so they can be configured</returns>
-        public static MySqlLeaseTransportOptions UseMySqlInLeaseMode(this StandardConfigurer<ITransport> configurer, MySqlLeaseTransportOptions transportOptions, string inputQueueName)
-        {
-            return Configure(
-                    configurer,
-                    (context, provider, inputQueue) =>
-                    {
-                        if (transportOptions.LeasedByFactory == null)
-                        {
-                            transportOptions.SetLeasedByFactory(() => Environment.MachineName);
-                        }
-
-                        return new MySqlLeaseTransport(
-                            provider,
-                            transportOptions.InputQueueName,
-                            context.Get<IRebusLoggerFactory>(),
-                            context.Get<IAsyncTaskFactory>(),
-                            context.Get<IRebusTime>(),
-                            transportOptions.LeaseInterval ?? MySqlLeaseTransport.DefaultLeaseTime,
-                            transportOptions.LeaseTolerance ?? MySqlLeaseTransport.DefaultLeaseTolerance,
-                            transportOptions.LeasedByFactory,
-                            transportOptions
-
-                        );
-                    },
-                    transportOptions
-                )
-                .ReadFrom(inputQueueName);
-        }
-
-        /// <summary>
-        /// Configures Rebus to use MySQL as its transport in "one-way client mode" (i.e. as a send only endpoint). Unlike the <c>UseMySql</c> calls the leased version of the MySQL
-        /// transport does not hold a transaction open for the entire duration of the message handling. Instead it marks a
-        /// message as being "leased" for a period of time. If the lease has expired then a worker is permitted to acquire the that
-        /// message again and try reprocessing
-        /// </summary>
-        /// <param name="configurer">Static to extend</param>
-        /// <param name="transportOptions">Options controlling the transport setup</param>
-        /// <returns>Transport options so they can be configured</returns>
-        public static MySqlLeaseTransportOptions UseMySqlInLeaseModeAsOneWayClient(this StandardConfigurer<ITransport> configurer, MySqlLeaseTransportOptions transportOptions)
-        {
-            return Configure(
-                    configurer,
-                    (context, provider, inputQueue) =>
-                    {
-                        if (transportOptions.LeasedByFactory == null)
-                        {
-                            transportOptions.SetLeasedByFactory(() => Environment.MachineName);
-                        }
-
-                        return new MySqlLeaseTransport(
-                            provider,
-                            transportOptions.InputQueueName,
-                            context.Get<IRebusLoggerFactory>(),
-                            context.Get<IAsyncTaskFactory>(),
-                            context.Get<IRebusTime>(),
-                            transportOptions.LeaseInterval ?? MySqlLeaseTransport.DefaultLeaseTime,
-                            transportOptions.LeaseTolerance ?? MySqlLeaseTransport.DefaultLeaseTolerance,
-                            transportOptions.LeasedByFactory,
-                            transportOptions
-                        );
-                    },
-                    transportOptions
-                )
-                .AsOneWayClient();
-        }
-
-        /// <summary>
-        /// Configures Rebus to use MySQL as its transport
+        /// Configures Rebus to use MySQL as its transport. This transport does not hold a transaction open for the entire duration of the
+        /// message handling. Instead it marks a message as being "leased" for a period of time. If the lease has expired then a worker
+        /// is permitted to acquire the that message again and try reprocessing.
         /// </summary>
         /// <param name="configurer">Static to extend</param>
         /// <param name="transportOptions">Options controlling the transport setup</param>
@@ -105,14 +30,21 @@ namespace Rebus.Config
         {
             return Configure(
                     configurer,
-                    (context, provider, inputQueue) => new MySqlTransport(provider, inputQueue, context.Get<IRebusLoggerFactory>(), context.Get<IAsyncTaskFactory>(), context.Get<IRebusTime>(), transportOptions),
-                    transportOptions
-                )
+                    (context, provider, inputQueue) => new MySqlTransport(
+                        provider,
+                        transportOptions.InputQueueName,
+                        context.Get<IRebusLoggerFactory>(),
+                        context.Get<IAsyncTaskFactory>(),
+                        context.Get<IRebusTime>(),
+                        transportOptions),
+                    transportOptions)
                 .ReadFrom(inputQueueName);
         }
 
         /// <summary>
-        /// Configures Rebus to use MySQL as its transport in "one-way client mode" (i.e. as a send-only endpoint).
+        /// Configures Rebus to use MySQL as its transport in "one-way client mode" (i.e. as a send only endpoint). This transport does
+        /// not hold a transaction open for the entire duration of the message handling. Instead it marks a message as being
+        /// "leased" for a period of time. If the lease has expired then a worker is permitted to acquire the that message again and try reprocessing.
         /// </summary>
         /// <param name="configurer">Static to extend</param>
         /// <param name="transportOptions">Options controlling the transport setup</param>
@@ -121,9 +53,14 @@ namespace Rebus.Config
         {
             return Configure(
                     configurer,
-                    (context, provider, inputQueue) => new MySqlTransport(provider, inputQueue, context.Get<IRebusLoggerFactory>(), context.Get<IAsyncTaskFactory>(), context.Get<IRebusTime>(), transportOptions),
-                    transportOptions
-                )
+                    (context, provider, inputQueue) => new MySqlTransport(
+                        provider,
+                        transportOptions.InputQueueName,
+                        context.Get<IRebusLoggerFactory>(),
+                        context.Get<IAsyncTaskFactory>(),
+                        context.Get<IRebusTime>(),
+                        transportOptions),
+                    transportOptions)
                 .AsOneWayClient();
         }
 

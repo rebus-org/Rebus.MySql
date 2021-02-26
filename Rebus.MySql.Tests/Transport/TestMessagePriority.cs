@@ -20,13 +20,8 @@ namespace Rebus.MySql.Tests.Transport
     {
         protected override void SetUp() => MySqlTestHelper.DropAllTables();
 
-        [Test]
-        public async Task ReceivedMessagesByPriority_HigherIsMoreImportant_Normal() => await RunTest("normal", 20);
-
-        [Test]
-        public async Task ReceivedMessagesByPriority_HigherIsMoreImportant_LeaseBased() => await RunTest("lease-based", 20);
-
-        async Task RunTest(string type, int messageCount)
+        [TestCase(20)]
+        public async Task ReceivedMessagesByPriority_HigherIsMoreImportant(int messageCount)
         {
             var counter = new SharedCounter(messageCount);
             var receivedMessagePriorities = new List<int>();
@@ -42,17 +37,7 @@ namespace Rebus.MySql.Tests.Transport
             });
 
             var serverBus = Configure.With(Using(server))
-                .Transport(t =>
-                {
-                    if (type == "normal")
-                    {
-                        t.UseMySql(new MySqlTransportOptions(MySqlTestHelper.ConnectionString), "server");
-                    }
-                    else
-                    {
-                        t.UseMySqlInLeaseMode(new MySqlLeaseTransportOptions(MySqlTestHelper.ConnectionString), "server");
-                    }
-                })
+                .Transport(t => t.UseMySql(new MySqlTransportOptions(MySqlTestHelper.ConnectionString), "server"))
                 .Options(o =>
                 {
                     o.SetNumberOfWorkers(0);
@@ -61,17 +46,7 @@ namespace Rebus.MySql.Tests.Transport
                 .Start();
 
             var clientBus = Configure.With(Using(new BuiltinHandlerActivator()))
-                .Transport(t =>
-                {
-                    if (type == "normal")
-                    {
-                        t.UseMySqlAsOneWayClient(new MySqlTransportOptions(MySqlTestHelper.ConnectionString));
-                    }
-                    else
-                    {
-                        t.UseMySqlInLeaseModeAsOneWayClient(new MySqlLeaseTransportOptions(MySqlTestHelper.ConnectionString));
-                    }
-                })
+                .Transport(t => t.UseMySqlAsOneWayClient(new MySqlTransportOptions(MySqlTestHelper.ConnectionString)))
                 .Routing(t => t.TypeBased().Map<string>("server"))
                 .Start();
 

@@ -21,11 +21,24 @@ namespace Rebus.MySql.Tests.Transport
         const string QueueName = "test-ordering";
         protected override void SetUp() => MySqlTestHelper.DropAllTables();
 
-        [TestCase(TransportType.LockedRows)]
-        [TestCase(TransportType.LeaseBased)]
-        public async Task DeliversMessagesByVisibleTimeAndNotBeInsertionTime(TransportType transportType)
+        [Test]
+        public async Task DeliversMessagesByVisibleTimeAndNotBeInsertionTime()
         {
-            var transport = GetTransport(transportType);
+            var rebusTime = new DefaultRebusTime();
+            var loggerFactory = new ConsoleLoggerFactory(false);
+            var connectionProvider = new DbConnectionProvider(MySqlTestHelper.ConnectionString, loggerFactory);
+            var asyncTaskFactory = new TplAsyncTaskFactory(loggerFactory);
+
+            var transport = new MySqlTransport(
+                connectionProvider,
+                QueueName,
+                loggerFactory,
+                asyncTaskFactory,
+                rebusTime,
+                new MySqlTransportOptions(connectionProvider));
+
+            transport.EnsureTableIsCreated();
+            transport.Initialize();
 
             var now = DateTime.Now;
 
@@ -57,12 +70,6 @@ namespace Rebus.MySql.Tests.Transport
             return body;
         }
 
-        public enum TransportType
-        {
-            LockedRows,
-            LeaseBased,
-        }
-
         static TransportMessage GetTransportMessage(string body, DateTime? deferredUntilTime = null)
         {
             var headers = new Dictionary<string, string>
@@ -84,40 +91,6 @@ namespace Rebus.MySql.Tests.Transport
             using var scope = new RebusTransactionScope();
             await transport.Send(QueueName, transportMessage, scope.TransactionContext);
             await scope.CompleteAsync();
-        }
-
-        static MySqlTransport GetTransport(TransportType transportType)
-        {
-            var rebusTime = new DefaultRebusTime();
-            var loggerFactory = new ConsoleLoggerFactory(false);
-            var connectionProvider = new DbConnectionProvider(MySqlTestHelper.ConnectionString, loggerFactory);
-            var asyncTaskFactory = new TplAsyncTaskFactory(loggerFactory);
-
-            var transport = transportType == TransportType.LeaseBased
-                ? new MySqlLeaseTransport(
-                    connectionProvider,
-                    QueueName,
-                    loggerFactory,
-                    asyncTaskFactory,
-                    rebusTime,
-                    TimeSpan.FromMinutes(1),
-                    TimeSpan.FromSeconds(5),
-                    () => "who cares",
-                    new MySqlLeaseTransportOptions(connectionProvider)
-                )
-                : new MySqlTransport(
-                    connectionProvider,
-                    QueueName,
-                    loggerFactory,
-                    asyncTaskFactory,
-                    rebusTime,
-                    new MySqlTransportOptions(connectionProvider)
-                );
-
-            transport.EnsureTableIsCreated();
-            transport.Initialize();
-
-            return transport;
         }
     }
 }

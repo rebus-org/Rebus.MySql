@@ -26,29 +26,15 @@ namespace Rebus.MySql.Tests.Transport
             MySqlTestHelper.DropTable(TableName);
         }
 
-        [TestCase(1000, true)]
-        [TestCase(1000, false)]
-        [TestCase(5000, true)]
-        [TestCase(5000, false)]
-        public async Task CheckReceivePerformance(int messageCount, bool useLeaseBasedTransport)
+        [TestCase(1000)]
+        [TestCase(5000)]
+        public async Task CheckReceivePerformance(int messageCount)
         {
             var adapter = Using(new BuiltinHandlerActivator());
 
             Configure.With(adapter)
                 .Logging(l => l.ColoredConsole(LogLevel.Warn))
-                .Transport(t =>
-                {
-                    if (useLeaseBasedTransport)
-                    {
-                        Console.WriteLine("*** Using LEASE-BASED SQL transport ***");
-                        t.UseMySqlInLeaseMode(new MySqlLeaseTransportOptions(MySqlTestHelper.ConnectionString), QueueName);
-                    }
-                    else
-                    {
-                        Console.WriteLine("*** Using NORMAL SQL transport ***");
-                        t.UseMySql(new MySqlTransportOptions(MySqlTestHelper.ConnectionString), QueueName);
-                    }
-                })
+                .Transport(t => t.UseMySql(new MySqlTransportOptions(MySqlTestHelper.ConnectionString), QueueName))
                 .Options(o =>
                 {
                     o.SetNumberOfWorkers(0);

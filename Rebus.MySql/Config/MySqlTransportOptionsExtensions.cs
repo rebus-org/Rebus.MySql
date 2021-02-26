@@ -63,50 +63,37 @@ namespace Rebus.Config
         }
 
         /// <summary>
-        /// If <c>null</c> will default to <seealso cref="MySqlLeaseTransport.DefaultLeaseTime"/>. Specifies how long a worker will request to keep a message. Higher values require less database communication but increase latency of a message being processed if a worker dies
+        /// If <c>null</c> will default to <seealso cref="MySqlTransport.DefaultLeaseTime"/>. Specifies how long a worker will request to keep a message. Higher values require less database communication but increase latency of a message being processed if a worker dies
         /// </summary>
-        public static TLeaseTransportOptions SetLeaseInterval<TLeaseTransportOptions>(this TLeaseTransportOptions options, TimeSpan? leaseInterval) where TLeaseTransportOptions : MySqlLeaseTransportOptions
+        public static TTransportOptions SetLeaseInterval<TTransportOptions>(this TTransportOptions options, TimeSpan? leaseInterval) where TTransportOptions : MySqlTransportOptions
         {
             options.LeaseInterval = leaseInterval;
             return options;
         }
 
         /// <summary>
-        /// If <c>null</c> will default to <seealso cref="MySqlLeaseTransport.DefaultLeaseTime"/>. Specifies how long a worker will request to keep a message. Higher values require less database communication but increase latency of a message being processed if a worker dies
+        /// If <c>null</c> will default to <seealso cref="MySqlTransport.DefaultLeaseTime"/>. Specifies how long a worker will request to keep a message. Higher values require less database communication but increase latency of a message being processed if a worker dies
         /// </summary>
-        public static TLeaseTransportOptions SetLeaseTolerance<TLeaseTransportOptions>(this TLeaseTransportOptions options, TimeSpan? leaseTolerance) where TLeaseTransportOptions : MySqlLeaseTransportOptions
+        public static TTransportOptions SetLeaseTolerance<TTransportOptions>(this TTransportOptions options, TimeSpan? leaseTolerance) where TTransportOptions : MySqlTransportOptions
         {
             options.LeaseTolerance = leaseTolerance;
             return options;
         }
 
         /// <summary>
-        /// Enables or disables automatic lease renewal. If <paramref name="automaticallyRenewLeases"/> is <c>true</c> and <paramref name="automaticLeaseRenewInterval"/> is <c>null</c> it will default to <seealso cref="MySqlLeaseTransport.DefaultLeaseAutomaticRenewal"/>
+        /// Enables automatic lease renewal. If <paramref name="automaticLeaseRenewInterval"/> is <c>null</c> then <seealso cref="MySqlTransport.DefaultLeaseAutomaticRenewal"/> will be used instead
         /// </summary>
-        public static TLeaseTransportOptions SetAutomaticLeaseRenewal<TLeaseTransportOptions>(this TLeaseTransportOptions options, bool automaticallyRenewLeases, TimeSpan? automaticLeaseRenewInterval) where TLeaseTransportOptions : MySqlLeaseTransportOptions
+        public static TTransportOptions EnableAutomaticLeaseRenewal<TTransportOptions>(this TTransportOptions options, TimeSpan? automaticLeaseRenewInterval) where TTransportOptions : MySqlTransportOptions
         {
-            options.AutomaticallyRenewLeases = automaticallyRenewLeases;
-            options.LeaseAutoRenewInterval = automaticLeaseRenewInterval;
-            return options;
-        }
-
-
-        /// <summary>
-        /// Enables automatic lease renewal. If <paramref name="automaticLeaseRenewInterval"/> is <c>null</c> then <seealso cref="MySqlLeaseTransport.DefaultLeaseAutomaticRenewal"/> will be used instead
-        /// </summary>
-        public static TLeaseTransportOptions EnableAutomaticLeaseRenewal<TLeaseTransportOptions>(this TLeaseTransportOptions options, TimeSpan? automaticLeaseRenewInterval) where TLeaseTransportOptions : MySqlLeaseTransportOptions
-        {
-            options.AutomaticallyRenewLeases = true;
             options.LeaseAutoRenewInterval = automaticLeaseRenewInterval;
             return options;
         }
 
         /// <summary>
-        /// Disables automatic lease renewal. Message handlers that run longer than <seealso cref="MySqlLeaseTransportOptions.LeaseInterval"/> would be processed by another worker even if the worker processing this message is healthy
+        /// Disables automatic lease renewal. Message handlers that run longer than <seealso cref="MySqlTransportOptions.LeaseInterval"/> would be processed by another worker even if the worker processing this message is healthy
         /// </summary>
-        public static TLeaseTransportOptions DisableAutomaticLeaseRenewal<TLeaseTransportOptions>(this TLeaseTransportOptions options) where TLeaseTransportOptions : MySqlLeaseTransportOptions
+        public static TTransportOptions DisableAutomaticLeaseRenewal<TTransportOptions>(this TTransportOptions options) where TTransportOptions : MySqlTransportOptions
         {
-            options.AutomaticallyRenewLeases = false;
             options.LeaseAutoRenewInterval = null;
             return options;
         }
@@ -114,7 +101,7 @@ namespace Rebus.Config
         /// <summary>
         /// If non-<c>null</c> a factory which returns a string identifying this worker when it leases a message. If <c>null></c> the current machine name is used
         /// </summary>
-        public static TLeaseTransportOptions SetLeasedByFactory<TLeaseTransportOptions>(this TLeaseTransportOptions options, Func<string> leasedByFactory) where TLeaseTransportOptions : MySqlLeaseTransportOptions
+        public static TTransportOptions SetLeasedByFactory<TTransportOptions>(this TTransportOptions options, Func<string> leasedByFactory) where TTransportOptions : MySqlTransportOptions
         {
             options.LeasedByFactory = leasedByFactory;
             return options;
