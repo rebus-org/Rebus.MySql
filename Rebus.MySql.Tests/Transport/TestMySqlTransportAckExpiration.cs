@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
 using NUnit.Framework;
@@ -19,7 +20,6 @@ namespace Rebus.MySql.Tests.Transport
         BuiltinHandlerActivator _activator;
         ListLoggerFactory _loggerFactory;
         IBusStarter _starter;
-        CancellationTokenSource _cancellationToken;
 
         protected override void SetUp()
         {
@@ -47,8 +47,6 @@ namespace Rebus.MySql.Tests.Transport
                     t.UseMySql(options, queueName);
                 })
                 .Create();
-
-            _cancellationToken = new CancellationTokenSource();
         }
 
         [Test]
@@ -56,6 +54,8 @@ namespace Rebus.MySql.Tests.Transport
         {
             var doneHandlingMessage = new ManualResetEvent(false);
 
+            var stopwatch = new Stopwatch();
+            stopwatch.Start();
             string firstMessageId = null;
             string secondMessageId = null;
             _activator.Handle<string>(async str =>
@@ -63,10 +63,10 @@ namespace Rebus.MySql.Tests.Transport
                 var messageId = MessageContext.Current.Message.Headers[Headers.MessageId];
                 if (firstMessageId == null)
                 {
-                    // If this is the first message, wait 20 seconds and bail if we get canceled
+                    // If this is the first message, wait 3 seconds and bail if we get canceled
                     firstMessageId = messageId;
                     Console.WriteLine($"First message {messageId}, gonna wait too long!");
-                    await Task.Delay(TimeSpan.FromSeconds(20), _cancellationToken.Token);
+                    await Task.Delay(TimeSpan.FromSeconds(3));
                     return;
                 }
 
@@ -79,10 +79,14 @@ namespace Rebus.MySql.Tests.Transport
             bus.SendLocal("hello my good friend!").Wait();
 
             doneHandlingMessage.WaitOrDie(TimeSpan.FromMinutes(2));
-            _cancellationToken.Cancel();
+            stopwatch.Stop();
+            var elapsedTime = stopwatch.ElapsedMilliseconds;
+            Console.WriteLine($"DONE: took time:{elapsedTime}ms");
 
-            // Make sure the second message was a replayed message
+            // Make sure the second message was a replayed message and did not run too quickly. It must be at
+            // least 2s for the timeout to have worked correctly.
             Assert.AreEqual(firstMessageId, secondMessageId);
+            Assert.IsTrue(elapsedTime > 2000);
         }
     }
 }

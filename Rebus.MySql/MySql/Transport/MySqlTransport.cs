@@ -277,12 +277,17 @@ namespace Rebus.MySql.Transport
                                 FROM {tableName}
                                 WHERE visible < now(6) AND 
                                       expiration > now(6) AND
-                                      processing = 0 
+                                      1 = CASE
+					                    WHEN processing = 0 then 1
+					                    WHEN visible < date_sub(now(6), INTERVAL @message_timeout_seconds SECOND) then 1
+					                    ELSE 0
+				                      END 
                                 ORDER BY priority DESC, 
                                          visible ASC, 
                                          id ASC 
                                 LIMIT 1
                                 FOR UPDATE";
+                            command.Parameters.Add("message_timeout_seconds", MySqlDbType.Int32).Value = (int)_messageAckTimeout.TotalSeconds;
                             long messageId;
                             using (var reader = command.ExecuteReader())
                             {
@@ -561,34 +566,8 @@ namespace Rebus.MySql.Transport
                             command.CommandText = $"DELETE FROM {_receiveTableName.QualifiedName} WHERE id in ({string.Join(",", messageIds)})";
                             affectedRows = await command.ExecuteNonQueryAsync().ConfigureAwait(false);
                         }
-
-                        // Check for any dead messages and release them again. This is any message where the visibility is now
-                        // older than our message ACK timeout.
-                        command.CommandText = $@"
-                            SELECT id
-                            FROM {_receiveTableName.QualifiedName}
-                            WHERE visible < date_sub(now(6), INTERVAL @message_timeout_seconds SECOND) and
-                                  processing = 1
-                            LIMIT 100";
-                        command.Parameters.Add("message_timeout_seconds", MySqlDbType.Int32).Value = (int)_messageAckTimeout.TotalSeconds;
-                        messageIds.Clear();
-                        using (var reader = await command.ExecuteReaderAsync().ConfigureAwait(false))
-                        {
-                            while (await reader.ReadAsync().ConfigureAwait(false))
-                            {
-                                messageIds.Add((long)reader["id"]);
-                            }
-                        }
-
-                        // If we got any messages to delete, clean them up in a single delete statement
-                        if (messageIds.Count > 0)
-                        {
-                            command.CommandText = $"UPDATE {_receiveTableName.QualifiedName} SET processing = 0 WHERE id in ({string.Join(",", messageIds)})";
-                            affectedRows = await command.ExecuteNonQueryAsync().ConfigureAwait(false);
-                        }
                     }
 
-                    // Commit all the changes
                     results += affectedRows;
                     await connection.CompleteAsync().ConfigureAwait(false);
 
