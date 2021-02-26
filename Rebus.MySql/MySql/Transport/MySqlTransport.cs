@@ -58,7 +58,6 @@ namespace Rebus.MySql.Transport
         protected readonly ILog _log;
 
         readonly IAsyncTask _expiredMessagesCleanupTask;
-        readonly TimeSpan _messageAckTimeout;
         readonly bool _autoDeleteQueue;
         bool _disposed;
 
@@ -81,7 +80,6 @@ namespace Rebus.MySql.Transport
 
             _expiredMessagesCleanupTask = asyncTaskFactory.Create("ExpiredMessagesCleanup", PerformExpiredMessagesCleanupCycle, intervalSeconds: intervalSeconds);
             _autoDeleteQueue = options.AutoDeleteQueue;
-            _messageAckTimeout = options.MessageAckTimeout;
         }
 
         /// <summary>
@@ -277,17 +275,12 @@ namespace Rebus.MySql.Transport
                                 FROM {tableName}
                                 WHERE visible < now(6) AND 
                                       expiration > now(6) AND
-                                      1 = CASE
-					                    WHEN processing = 0 then 1
-					                    WHEN visible < date_sub(now(6), INTERVAL @message_timeout_seconds SECOND) then 1
-					                    ELSE 0
-				                      END 
+                                      processing = 0 
                                 ORDER BY priority DESC, 
                                          visible ASC, 
                                          id ASC 
                                 LIMIT 1
                                 FOR UPDATE";
-                            command.Parameters.Add("message_timeout_seconds", MySqlDbType.Int32).Value = (int)_messageAckTimeout.TotalSeconds;
                             long messageId;
                             using (var reader = command.ExecuteReader())
                             {
@@ -543,6 +536,7 @@ namespace Rebus.MySql.Transport
                     // on the entire table. If we try to do something like delete from blah where expiration < now()
                     // that will take a lock on the entire table which will stall out until the messages are processed.
                     int affectedRows = 0;
+                    var messageIds = new List<long>();
                     using (var command = connection.CreateCommand())
                     {
                         command.CommandText = $@"
@@ -551,7 +545,6 @@ namespace Rebus.MySql.Transport
                             WHERE expiration < now() and
                                   processing = 0
                             LIMIT 100";
-                        var messageIds = new List<long>();
                         using (var reader = await command.ExecuteReaderAsync().ConfigureAwait(false))
                         {
                             while (await reader.ReadAsync().ConfigureAwait(false))
@@ -563,7 +556,7 @@ namespace Rebus.MySql.Transport
                         // If we got any messages to delete, clean them up in a single delete statement
                         if (messageIds.Count > 0)
                         {
-                            command.CommandText = $"DELETE FROM {_receiveTableName.QualifiedName} WHERE id in ({string.Join(",", messageIds)})";
+                            command.CommandText = $"DELETE FROM {_receiveTableName.QualifiedName} where id in ({string.Join(",", messageIds)})";
                             affectedRows = await command.ExecuteNonQueryAsync().ConfigureAwait(false);
                         }
                     }

@@ -54,15 +54,6 @@ namespace Rebus.Config
         }
 
         /// <summary>
-        /// Sets the maximum amount of time an unprocessed message can remain unacknowledged before it is replayed. Defaults to 10 seconds.
-        /// </summary>
-        public static TTransportOptions SetMessageAckTimeout<TTransportOptions>(this TTransportOptions options, TimeSpan messageAckTimeout) where TTransportOptions : MySqlTransportOptions
-        {
-            options.MessageAckTimeout = messageAckTimeout;
-            return options;
-        }
-
-        /// <summary>
         /// Sets the delay between executions of the background cleanup task
         /// </summary>
         public static TTransportOptions SetExpiredMessagesCleanupInterval<TTransportOptions>(this TTransportOptions options, TimeSpan interval) where TTransportOptions : MySqlTransportOptions
