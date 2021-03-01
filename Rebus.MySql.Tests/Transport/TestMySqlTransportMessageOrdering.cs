@@ -22,7 +22,7 @@ namespace Rebus.MySql.Tests.Transport
         protected override void SetUp() => MySqlTestHelper.DropAllTables();
 
         [Test]
-        public async Task DeliversMessagesByVisibleTimeAndNotBeInsertionTime()
+        public async Task DeliversMessagesByVisibleTimeAndNotByInsertionTime()
         {
             var rebusTime = new DefaultRebusTime();
             var loggerFactory = new ConsoleLoggerFactory(false);

@@ -36,9 +36,19 @@ namespace Rebus.MySql.Transport
         public const string MessagePriorityHeaderKey = "rbs2-msg-priority";
 
         /// <summary>
+        /// Special message priority header that can be used with the <see cref="MySqlTransport"/>. The value must be a <see cref="String"/>
+        /// </summary>
+        public const string OrderingKeyHeaderKey = "rbs2-msg-ordering-key";
+
+        /// <summary>
         /// Key for storing the outbound message buffer when performing <seealso cref="Send"/>
         /// </summary>
         public const string OutboundMessageBufferKey = "sql-server-transport-leased-outbound-message-buffer";
+
+        /// <summary>
+        /// Size of the ordering_key column
+        /// </summary>
+        public const int OrderingKeyColumnSize = 200;
 
         /// <summary>
         /// Size of the leased_by column
@@ -188,8 +198,10 @@ namespace Rebus.MySql.Transport
                     // Check if the schema needs to be upgraded
                     var columns = connection.GetColumns(schema, tableName);
                     if (!columns.ContainsKey("processing") &&
+                        columns.ContainsKey("ordering_key") &&
                         columns.ContainsKey("leased_until") &&
                         columns.ContainsKey("leased_by") &&
+                        columns.ContainsKey("leased_for") &&
                         columns.ContainsKey("leased_at"))
                     {
                         _log.Info("Database already contains a table named {tableName} - will not create anything", table.QualifiedName);
@@ -199,17 +211,23 @@ namespace Rebus.MySql.Transport
                         connection.ExecuteCommands($@"
                             {MySqlMagic.DropColumnIfExistsSql(schema, tableName, "processing")}
                             ----
-                            {MySqlMagic.CreateColumnIfNotExistsSql(schema, tableName, "leased_until", "datetime(6) NULL")}
+                            {MySqlMagic.CreateColumnIfNotExistsSql(schema, tableName, "ordering_key", $"varchar({OrderingKeyColumnSize}) NULL after `visible`")}
                             ----
-                            {MySqlMagic.CreateColumnIfNotExistsSql(schema, tableName, "leased_by", $"varchar({LeasedByColumnSize}) NULL")}
+                            {MySqlMagic.CreateColumnIfNotExistsSql(schema, tableName, "leased_until", "datetime(6) NULL after `body`")}
                             ----
-                            {MySqlMagic.CreateColumnIfNotExistsSql(schema, tableName, "leased_at", "datetime(6) NULL")}
+                            {MySqlMagic.CreateColumnIfNotExistsSql(schema, tableName, "leased_by", $"varchar({LeasedByColumnSize}) NULL after `leased_until`")}
+                            ----
+                            {MySqlMagic.CreateColumnIfNotExistsSql(schema, tableName, "leased_for", $"varchar({OrderingKeyColumnSize}) NULL after `leased_by`")}
+                            ----
+                            {MySqlMagic.CreateColumnIfNotExistsSql(schema, tableName, "leased_at", "datetime(6) NULL after `leased_for`")}
                             ----
                             {MySqlMagic.DropIndexIfExistsSql(schema, tableName, "idx_receive")}
                             ----
                             {MySqlMagic.DropIndexIfExistsSql(schema, tableName, "idx_receive_lease")}
                             ----
-                            {MySqlMagic.CreateIndexIfNotExistsSql(schema, tableName, "idx_receive", "`priority` DESC, `visible` ASC, `id` ASC, `expiration` ASC, `leased_until` DESC")}");
+                            {MySqlMagic.CreateIndexIfNotExistsSql(schema, tableName, "idx_receive", "`priority` DESC, `visible` ASC, `id` ASC, `expiration` ASC, `leased_until` DESC, `leased_for` ASC")}
+                            ----
+                            {MySqlMagic.CreateIndexIfNotExistsSql(schema, tableName, "idx_leased_for", "`leased_for`")}");
                     }
                 }
                 else
@@ -222,10 +240,12 @@ namespace Rebus.MySql.Transport
                             `priority` INT NOT NULL,
                             `expiration` DATETIME(6) NOT NULL,
                             `visible` DATETIME(6) NOT NULL,
+                            `ordering_key` varchar({OrderingKeyColumnSize}) NULL,
                             `headers` LONGBLOB NOT NULL,
                             `body` LONGBLOB NOT NULL,
                             `leased_until` datetime(6) NULL,
                             `leased_by` varchar({LeasedByColumnSize}) NULL,
+                            `leased_for` varchar({OrderingKeyColumnSize}) NULL,
                             `leased_at` datetime(6) NULL,
                             PRIMARY KEY (`id`)
                         );
@@ -235,7 +255,12 @@ namespace Rebus.MySql.Transport
                             `visible` ASC,
                             `id` ASC,
                             `expiration` ASC,
-                            `leased_until` DESC
+                            `leased_until` DESC,
+                            `leased_for` ASC
+                        );
+                        ----
+                        CREATE INDEX `idx_leased_for` ON {table.QualifiedName} (
+                            `leased_for`
                         );
                         ----
                         CREATE INDEX `idx_expiration` ON {table.QualifiedName} (
@@ -349,17 +374,20 @@ namespace Rebus.MySql.Transport
                         `headers`,
                         `body`,
                         `priority`,
+                        `ordering_key`,
                         `visible`,
                         `expiration`
                     ) VALUES (
                         @headers,
                         @body,
                         @priority,
+                        @ordering_key,
                         date_add(date_add(now(6), INTERVAL @visible_total_seconds SECOND), INTERVAL @visible_microseconds MICROSECOND),
                         date_add(date_add(now(6), INTERVAL @ttl_total_seconds SECOND), INTERVAL @ttl_microseconds MICROSECOND)
                     );";
                 var headers = message.Headers.Clone();
                 var priority = GetMessagePriority(headers);
+                var orderingKey = GetOrderingKey(headers);
                 var visible = GetInitialVisibilityDelay(headers);
                 var ttl = GetTtl(headers);
 
@@ -369,6 +397,7 @@ namespace Rebus.MySql.Transport
                 command.Parameters.Add("headers", MySqlDbType.VarBinary, MathUtil.GetNextPowerOfTwo(serializedHeaders.Length)).Value = serializedHeaders;
                 command.Parameters.Add("body", MySqlDbType.VarBinary, MathUtil.GetNextPowerOfTwo(message.Body.Length)).Value = message.Body;
                 command.Parameters.Add("priority", MySqlDbType.Int32).Value = priority;
+                command.Parameters.Add("ordering_key", MySqlDbType.VarChar, OrderingKeyColumnSize).Value = orderingKey;
                 command.Parameters.Add("visible_total_seconds", MySqlDbType.Int32).Value = (int)visible.TotalSeconds;
                 command.Parameters.Add("visible_microseconds", MySqlDbType.Int32).Value = visible.Milliseconds * 1000;
                 command.Parameters.Add("ttl_total_seconds", MySqlDbType.Int32).Value = (int)ttl.TotalSeconds;
@@ -403,26 +432,30 @@ namespace Rebus.MySql.Transport
                             command.CommandText = $@"
                                 SELECT id,
                                        headers,
-                                       body
-                                FROM {tableName} 
-                                WHERE visible < now(6) AND 
-                                      expiration > now(6) AND 
+                                       body,
+                                       ordering_key
+                                FROM {tableName}
+                                WHERE visible < now(6) AND
+                                      expiration > now(6) AND
                                       1 = CASE
+                                        WHEN ordering_key is not null AND (SELECT COUNT(*) FROM {tableName} k WHERE k.leased_for = {tableName}.ordering_key) > 0 THEN 0
 					                    WHEN leased_until is null then 1
 					                    WHEN date_add(date_add(leased_until, INTERVAL @lease_tolerance_total_seconds SECOND), INTERVAL @lease_tolerance_microseconds MICROSECOND) < now(6) THEN 1
 					                    ELSE 0
-				                      END 
-                                ORDER BY priority DESC, 
-                                         visible ASC, 
-                                         id ASC 
+				                      END
+                                ORDER BY priority DESC,
+                                         visible ASC,
+                                         id ASC
                                 LIMIT 1
                                 FOR UPDATE";
                             long messageId;
+                            object orderingKey;
                             using (var reader = command.ExecuteReader())
                             {
                                 transportMessage = ExtractTransportMessageFromReader(reader);
                                 if (transportMessage == null) return Task.FromResult<TransportMessage>(null);
                                 messageId = (long)reader["id"];
+                                orderingKey = reader["ordering_key"];
                             }
 
                             // Mark the message as being processed within the transaction
@@ -430,12 +463,14 @@ namespace Rebus.MySql.Transport
                                 UPDATE {tableName} 
                                 SET leased_until = date_add(date_add(now(6), INTERVAL @lease_total_seconds SECOND), INTERVAL @lease_microseconds MICROSECOND),
                                     leased_at = now(6),
+                                    leased_for = @leased_for,
                                     leased_by = @leased_by
                                 WHERE id = @message_id";
                             command.Parameters.Add("lease_total_seconds", MySqlDbType.Int32).Value = (int)_leaseInterval.TotalSeconds;
                             command.Parameters.Add("lease_microseconds", MySqlDbType.Int32).Value = _leaseInterval.Milliseconds * 1000;
                             command.Parameters.Add("lease_tolerance_total_seconds", MySqlDbType.Int32).Value = (int)_leaseTolerance.TotalSeconds;
                             command.Parameters.Add("lease_tolerance_microseconds", MySqlDbType.Int32).Value = _leaseTolerance.Milliseconds * 1000;
+                            command.Parameters.Add("leased_for", MySqlDbType.VarChar, OrderingKeyColumnSize).Value = orderingKey;
                             command.Parameters.Add("leased_by", MySqlDbType.VarChar, LeasedByColumnSize).Value = _leasedByFactory();
                             command.Parameters.Add("message_id", MySqlDbType.Int64).Value = messageId;
                             command.ExecuteNonQuery();
@@ -548,6 +583,7 @@ namespace Rebus.MySql.Transport
                                     UPDATE {tableName}
                                     SET leased_until = null,
                                         leased_by = null,
+                                        leased_for = null,
                                         leased_at = null
                                     WHERE id = @id";
                                 command.Parameters.Add("id", MySqlDbType.Int64).Value = messageId;
@@ -754,6 +790,11 @@ namespace Rebus.MySql.Transport
             {
                 throw new FormatException($"Could not parse '{valueOrNull}' into an Int32!", exception);
             }
+        }
+
+        static string GetOrderingKey(Dictionary<string, string> headers)
+        {
+            return headers.GetValueOrNull(OrderingKeyHeaderKey);
         }
 
         /// <summary>
