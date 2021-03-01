@@ -430,22 +430,23 @@ namespace Rebus.MySql.Transport
                             // Read the message and extra the data and ID if found
                             var tableName = _receiveTableName.QualifiedName;
                             command.CommandText = $@"
-                                SELECT id,
-                                       headers,
-                                       body,
-                                       ordering_key
-                                FROM {tableName}
-                                WHERE visible < now(6) AND
-                                      expiration > now(6) AND
+                                SELECT i.id,
+                                       i.headers,
+                                       i.body,
+                                       i.ordering_key
+                                FROM {tableName} i 
+                                    LEFT JOIN {tableName} k ON (i.ordering_key is not null AND k.leased_for = i.ordering_key)
+                                WHERE i.visible < now(6) AND
+                                      i.expiration > now(6) AND
+                                      k.id is null AND
                                       1 = CASE
-                                        WHEN ordering_key is not null AND (SELECT COUNT(*) FROM {tableName} k WHERE k.leased_for = {tableName}.ordering_key) > 0 THEN 0
-					                    WHEN leased_until is null then 1
-					                    WHEN date_add(date_add(leased_until, INTERVAL @lease_tolerance_total_seconds SECOND), INTERVAL @lease_tolerance_microseconds MICROSECOND) < now(6) THEN 1
+					                    WHEN i.leased_until is null then 1
+					                    WHEN date_add(date_add(i.leased_until, INTERVAL @lease_tolerance_total_seconds SECOND), INTERVAL @lease_tolerance_microseconds MICROSECOND) < now(6) THEN 1
 					                    ELSE 0
 				                      END
-                                ORDER BY priority DESC,
-                                         visible ASC,
-                                         id ASC
+                                ORDER BY i.priority DESC,
+                                         i.visible ASC,
+                                         i.id ASC
                                 LIMIT 1
                                 FOR UPDATE";
                             long messageId;

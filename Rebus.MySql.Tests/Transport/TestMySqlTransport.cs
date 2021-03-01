@@ -84,7 +84,7 @@ namespace Rebus.MySql.Tests.Transport
         }
 
         [Test]
-        public async Task IgnoredMessagesWithSameOrderingKeyAsLeasedMessages()
+        public async Task IgnoresMessagesWithSameOrderingKeyAsLeasedMessages()
         {
             using (var scope = new RebusTransactionScope())
             {
