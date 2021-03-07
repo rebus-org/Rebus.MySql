@@ -21,3 +21,4 @@ before_build:
 build_script:
   - dotnet build Rebus.MySql -c Release 
   - dotnet build Rebus.MySql.Tests -c Release 
+  - dotnet test Rebus.MySql.Tests
