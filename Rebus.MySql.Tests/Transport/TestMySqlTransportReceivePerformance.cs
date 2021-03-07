@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Threading.Tasks;
@@ -6,6 +7,7 @@ using NUnit.Framework;
 using Rebus.Activation;
 using Rebus.Config;
 using Rebus.Logging;
+using Rebus.MySql.Transport;
 using Rebus.Tests.Contracts;
 using Rebus.Tests.Contracts.Utilities;
 // ReSharper disable ArgumentsStyleOther
@@ -26,29 +28,17 @@ namespace Rebus.MySql.Tests.Transport
             MySqlTestHelper.DropTable(TableName);
         }
 
-        [TestCase(1000, true)]
-        [TestCase(1000, false)]
-        [TestCase(5000, true)]
-        [TestCase(5000, false)]
-        public async Task CheckReceivePerformance(int messageCount, bool useLeaseBasedTransport)
+        [TestCase(1000, false, false)]
+        [TestCase(1000, true, false)]
+        [TestCase(1000, true, true)]
+        [TestCase(5000, false, false)]
+        public async Task CheckReceivePerformance(int messageCount, bool useOrderingKey, bool useDifferentOrderingKey)
         {
             var adapter = Using(new BuiltinHandlerActivator());
 
             Configure.With(adapter)
                 .Logging(l => l.ColoredConsole(LogLevel.Warn))
-                .Transport(t =>
-                {
-                    if (useLeaseBasedTransport)
-                    {
-                        Console.WriteLine("*** Using LEASE-BASED SQL transport ***");
-                        t.UseMySqlInLeaseMode(new MySqlLeaseTransportOptions(MySqlTestHelper.ConnectionString), QueueName);
-                    }
-                    else
-                    {
-                        Console.WriteLine("*** Using NORMAL SQL transport ***");
-                        t.UseMySql(new MySqlTransportOptions(MySqlTestHelper.ConnectionString), QueueName);
-                    }
-                })
+                .Transport(t => t.UseMySql(new MySqlTransportOptions(MySqlTestHelper.ConnectionString), QueueName))
                 .Options(o =>
                 {
                     o.SetNumberOfWorkers(0);
@@ -60,8 +50,9 @@ namespace Rebus.MySql.Tests.Transport
 
             var stopwatch = Stopwatch.StartNew();
 
+            // Use the same ordering key for each message to test the performance
             await Task.WhenAll(Enumerable.Range(0, messageCount)
-                .Select(i => adapter.Bus.SendLocal($"THIS IS MESSAGE {i}")));
+                .Select(i => adapter.Bus.SendLocal($"THIS IS MESSAGE {i}", GetHeaders(useOrderingKey, useDifferentOrderingKey ? i : 0))));
 
             var elapsedSeconds = stopwatch.Elapsed.TotalSeconds;
 
@@ -77,11 +68,22 @@ namespace Rebus.MySql.Tests.Transport
 
             adapter.Bus.Advanced.Workers.SetNumberOfWorkers(3);
 
-            counter.WaitForResetEvent(timeoutSeconds: messageCount / 100 + 5);
+            counter.WaitForResetEvent(timeoutSeconds: messageCount / 50 + 5);
 
             elapsedSeconds = stopwatch.Elapsed.TotalSeconds;
 
             Console.WriteLine($"{messageCount} messages received in {elapsedSeconds:0.0} s - that's {messageCount / elapsedSeconds:0.0} msg/s");
+        }
+
+        private static Dictionary<string, string> GetHeaders(bool useOrderingKey, int counter)
+        {
+            var headers = useOrderingKey
+                ? new Dictionary<string, string>
+                {
+                    {MySqlTransport.OrderingKeyHeaderKey, $"ordering-key-{counter}"}
+                }
+                : null;
+            return headers;
         }
     }
 }

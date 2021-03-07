@@ -83,6 +83,49 @@ namespace Rebus.MySql.Tests.Transport
             }
         }
 
+        [Test]
+        public async Task IgnoresMessagesWithSameOrderingKeyAsLeasedMessages()
+        {
+            using (var scope = new RebusTransactionScope())
+            {
+                // Send three messages, the first two using the same ordering key, one without an ordering key
+                // and the last one with a different key
+                const string orderingKey = "ordering-key";
+                const string differentOrderingKey = "differentOrderingKey";
+                await _transport.Send(QueueName, RecognizableMessage(1, orderingKey), scope.TransactionContext);
+                await _transport.Send(QueueName, RecognizableMessage(2, orderingKey), scope.TransactionContext);
+                await _transport.Send(QueueName, RecognizableMessage(3), scope.TransactionContext);
+                await _transport.Send(QueueName, RecognizableMessage(4, differentOrderingKey), scope.TransactionContext);
+                await scope.CompleteAsync();
+            }
+
+            // We should get message 1, skip 2, then 3 and 4 while inside the transaction
+            using (var scope = new RebusTransactionScope())
+            {
+                var transportMessage1 = await _transport.Receive(scope.TransactionContext, _cancellationToken);
+                var transportMessage2 = await _transport.Receive(scope.TransactionContext, _cancellationToken);
+                var transportMessage3 = await _transport.Receive(scope.TransactionContext, _cancellationToken);
+                var transportMessage4 = await _transport.Receive(scope.TransactionContext, _cancellationToken);
+
+                await scope.CompleteAsync();
+
+                AssertMessageIsRecognized(transportMessage1, 1);
+                AssertMessageIsRecognized(transportMessage2, 3);
+                AssertMessageIsRecognized(transportMessage3, 4);
+                Assert.IsNull(transportMessage4);
+            }
+
+            // Now that message one is completed, we should then receive message 2
+            using (var scope = new RebusTransactionScope())
+            {
+                var transportMessage = await _transport.Receive(scope.TransactionContext, _cancellationToken);
+
+                await scope.CompleteAsync();
+
+                AssertMessageIsRecognized(transportMessage, 2);
+            }
+        }
+
         [TestCase(1000)]
         public async Task LotsOfAsyncStuffGoingDown(int numberOfMessages)
         {
@@ -139,18 +182,23 @@ namespace Rebus.MySql.Tests.Transport
             }
         }
 
-        void AssertMessageIsRecognized(TransportMessage transportMessage)
+        void AssertMessageIsRecognized(TransportMessage transportMessage, int id = 0)
         {
             Assert.That(transportMessage.Headers.GetValue("recognizzle"), Is.EqualTo("hej"));
+            Assert.That(transportMessage.Headers.GetValue("id"), Is.EqualTo(id.ToString()));
         }
 
-        static TransportMessage RecognizableMessage(int id = 0)
+        static TransportMessage RecognizableMessage(int id = 0, string orderingKey = null)
         {
             var headers = new Dictionary<string, string>
             {
                 {"recognizzle", "hej"},
                 {"id", id.ToString()}
             };
+            if (orderingKey != null)
+            {
+                headers[MySqlTransport.OrderingKeyHeaderKey] = orderingKey;
+            }
             return new TransportMessage(headers, new byte[] { 1, 2, 3 });
         }
     }
