@@ -9,8 +9,7 @@ using IsolationLevel = System.Data.IsolationLevel;
 namespace Rebus.MySql
 {
     /// <summary>
-    /// Implementation of <see cref="IDbConnectionProvider"/> that ensures that MARS (multiple active result sets) is enabled on the
-    /// given connection string (possibly by enabling it by itself)
+    /// Implementation of <see cref="IDbConnectionProvider"/>
     /// </summary>
     public class DbConnectionProvider : IDbConnectionProvider
     {
@@ -20,7 +19,7 @@ namespace Rebus.MySql
 
         /// <summary>
         /// Creates the connection provider with the given <paramref name="connectionString"/>.
-        /// Will use <see cref="System.Data.IsolationLevel.ReadCommitted"/> by default on transactions,
+        /// Will use <see cref="System.Data.IsolationLevel.RepeatableRead"/> by default on transactions,
         /// unless another isolation level is set with the <see cref="IsolationLevel"/> property
         /// </summary>
         public DbConnectionProvider(string connectionString, IRebusLoggerFactory rebusLoggerFactory, bool enlistInAmbientTransaction = false)
@@ -136,6 +135,6 @@ namespace Rebus.MySql
         /// <summary>
         /// Gets/sets the isolation level used for transactions
         /// </summary>
-        public IsolationLevel IsolationLevel { get; set; } = IsolationLevel.ReadCommitted;
+        public IsolationLevel IsolationLevel { get; set; } = IsolationLevel.RepeatableRead;
     }
 }
