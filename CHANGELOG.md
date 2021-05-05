@@ -29,8 +29,10 @@
 ## 3.0.0-b3
 * Remove MSSQL-specific index limitations - thanks [kendallb]
 
-## 3.0.0-b5
+## 3.0.0-b6
 * Removed leased based transport and made it the default due to how MySQL works with row locking - thanks [kendallb]
+* Change transaction isolation mode to REPEATABLE READ - thanks [kendallb]
+
 
 [kendallb]: https://github.com/kendallb
 [mvandevy]: https://github.com/mvandevy
