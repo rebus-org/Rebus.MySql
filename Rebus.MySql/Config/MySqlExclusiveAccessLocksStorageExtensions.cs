@@ -1,5 +1,5 @@
 ﻿using System;
-using Rebus.Bus.Advanced;
+using Rebus.ExclusiveLocks;
 using Rebus.Logging;
 using Rebus.MySql.ExclusiveLocks;
 using Rebus.Threading;
