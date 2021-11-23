@@ -438,7 +438,7 @@ namespace Rebus.MySql.Transport
                                     LEFT JOIN {tableName} k ON (i.ordering_key is not null AND k.leased_for = i.ordering_key)
                                 WHERE i.visible < now(6) AND
                                       i.expiration > now(6) AND
-                                      k.id is null AND
+                                      (k.id is null or k.id = i.id) AND
                                       1 = CASE
 					                    WHEN i.leased_until is null then 1
 					                    WHEN date_add(date_add(i.leased_until, INTERVAL @lease_tolerance_total_seconds SECOND), INTERVAL @lease_tolerance_microseconds MICROSECOND) < now(6) THEN 1
@@ -449,6 +449,8 @@ namespace Rebus.MySql.Transport
                                          i.id ASC
                                 LIMIT 1
                                 FOR UPDATE";
+                            command.Parameters.Add("lease_tolerance_total_seconds", MySqlDbType.Int32).Value = (int)_leaseTolerance.TotalSeconds;
+                            command.Parameters.Add("lease_tolerance_microseconds", MySqlDbType.Int32).Value = _leaseTolerance.Milliseconds * 1000;
                             long messageId;
                             object orderingKey;
                             using (var reader = command.ExecuteReader())
@@ -469,8 +471,6 @@ namespace Rebus.MySql.Transport
                                 WHERE id = @message_id";
                             command.Parameters.Add("lease_total_seconds", MySqlDbType.Int32).Value = (int)_leaseInterval.TotalSeconds;
                             command.Parameters.Add("lease_microseconds", MySqlDbType.Int32).Value = _leaseInterval.Milliseconds * 1000;
-                            command.Parameters.Add("lease_tolerance_total_seconds", MySqlDbType.Int32).Value = (int)_leaseTolerance.TotalSeconds;
-                            command.Parameters.Add("lease_tolerance_microseconds", MySqlDbType.Int32).Value = _leaseTolerance.Milliseconds * 1000;
                             command.Parameters.Add("leased_for", MySqlDbType.VarChar, OrderingKeyColumnSize).Value = orderingKey;
                             command.Parameters.Add("leased_by", MySqlDbType.VarChar, LeasedByColumnSize).Value = _leasedByFactory();
                             command.Parameters.Add("message_id", MySqlDbType.Int64).Value = messageId;
