@@ -8,11 +8,14 @@ using Rebus.Bus;
 using Rebus.Config;
 using Rebus.Handlers;
 using Rebus.Logging;
+using Rebus.MySql.ExclusiveLocks;
 using Rebus.Routing.TypeBased;
 using Rebus.Sagas;
 using Rebus.Sagas.Exclusive;
 using Rebus.Tests.Contracts;
 using Rebus.Tests.Contracts.Utilities;
+using Rebus.Threading;
+using Rebus.Time;
 using Rebus.Transport.InMem;
 #pragma warning disable 1998
 
@@ -63,11 +66,23 @@ namespace Rebus.MySql.Tests.Sagas
             Configure.With(sagaActivator)
                 .Logging(l => l.Use(loggerFactory))
                 .Transport(t => t.UseInMemoryTransport(network, "lock-test"))
-                .Locking(l => l.UseMySql(new MySqlExclusiveAccessLockOptions(MySqlTestHelper.ConnectionString), _lockTableName))
                 .Sagas(s =>
                 {
                     s.StoreInMySql(MySqlTestHelper.ConnectionString, _dataTableName, _indexTableName);
-                    s.EnforceExclusiveAccessViaLocker();
+                    s.EnforceExclusiveAccess(c =>
+                    {
+                        var options = new MySqlExclusiveAccessLockOptions(MySqlTestHelper.ConnectionString);
+                        var rebusLoggerFactory = c.Get<IRebusLoggerFactory>();
+                        var connectionProvider = options.ConnectionProviderFactory(c);
+                        var asyncTaskFactory = c.Get<IAsyncTaskFactory>();
+                        var rebusTime = c.Get<IRebusTime>();
+                        var locker = new MySqlExclusiveAccessLock(connectionProvider, _lockTableName, rebusLoggerFactory, asyncTaskFactory, rebusTime, options);
+                        if (options.EnsureTablesAreCreated)
+                        {
+                            locker.EnsureTableIsCreated();
+                        }
+                        return locker;
+                    });
                 })
                 .Routing(t => t.TypeBased().Map<ProcessThisThingRequest>("processor"))
                 .Options(o =>
