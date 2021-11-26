@@ -24,6 +24,6 @@
   <ItemGroup>
     <PackageReference Include="Microsoft.CSharp" Version="4.7.0" />
     <PackageReference Include="MySqlConnector" Version="1.2.1" />
-    <PackageReference Include="Rebus" Version="6.4.1" />
+    <PackageReference Include="Rebus" Version="7.0.0-b01" />
   </ItemGroup>
 </Project>
