@@ -20,7 +20,15 @@ namespace Rebus.MySql
         /// <summary>
         /// Gets a nice ready-to-use database connection with an open transaction
         /// </summary>
-        public IDbConnection GetConnection() => _connectionFactory().GetAwaiter().GetResult();
+        public IDbConnection GetConnection()
+        {
+            IDbConnection connection = null;
+            AsyncHelpers.RunSync(async () =>
+            {
+                connection = await _connectionFactory().ConfigureAwait(false);
+            });
+            return connection;
+        }
 
         /// <summary>
         /// Gets a nice ready-to-use database connection with an open transaction
