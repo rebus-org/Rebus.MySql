@@ -13,14 +13,15 @@ namespace Rebus.MySql.Subscriptions
     /// <summary>
     /// Implementation of <see cref="ISubscriptionStorage"/> that persists subscriptions in a table in MySQL
     /// </summary>
-    public class MySqlSubscriptionStorage : ISubscriptionStorage, IInitializable
+    public class MySqlSubscriptionStorage : ISubscriptionStorage
     {
         readonly IDbConnectionProvider _connectionProvider;
         readonly TableName _tableName;
         readonly ILog _log;
 
-        int _topicLength = 200;
-        int _addressLength = 200;
+        // Default column sizes to use when creating the table
+        int _defaultTopicLength = 200;
+        int _defaultAddressLength = 200;
 
         /// <summary>
         /// Constructs the storage using the specified connection provider and table to store its subscriptions. If the subscription
@@ -40,9 +41,9 @@ namespace Rebus.MySql.Subscriptions
         }
 
         /// <summary>
-        /// Initializes the subscription storage by reading the lengths of the [topic] and [address] columns from MySQL
+        /// Reading the lengths of the [topic] and [address] columns from MySQL and store them locally
         /// </summary>
-        public void Initialize()
+        void GetColumnWidths()
         {
             try
             {
@@ -87,6 +88,40 @@ namespace Rebus.MySql.Subscriptions
         }
 
         /// <summary>
+        /// Returns the topic length if initialized, and reads from the database if not. We read this when
+        /// we first need it so we do not try to hit MySQL during startup in case it is down.
+        /// </summary>
+        int TopicLength
+        {
+            get
+            {
+                if (_topicLength == null)
+                {
+                    GetColumnWidths();
+                }
+                return _topicLength.Value;
+            }
+        }
+        int? _topicLength;
+
+        /// <summary>
+        /// Returns the address length if initialized, and reads from the database if not. We read this when
+        /// we first need it so we do not try to hit MySQL during startup in case it is down.
+        /// </summary>
+        int AddressLength
+        {
+            get
+            {
+                if (_addressLength == null)
+                {
+                    GetColumnWidths();
+                }
+                return _addressLength.Value;
+            }
+        }
+        int? _addressLength;
+
+        /// <summary>
         /// Creates the subscriptions table if necessary
         /// </summary>
         public void EnsureTableIsCreated()
@@ -118,8 +153,8 @@ namespace Rebus.MySql.Subscriptions
                 {
                     connection.ExecuteCommands($@"
                         CREATE TABLE {_tableName.QualifiedName} (
-                            `topic` VARCHAR({_topicLength}) NOT NULL,
-	                        `address` VARCHAR({_addressLength}) NOT NULL,
+                            `topic` VARCHAR({_defaultTopicLength}) NOT NULL,
+	                        `address` VARCHAR({_defaultAddressLength}) NOT NULL,
                             PRIMARY KEY (`topic`, `address`)
                         )");
                     command.ExecuteNonQuery();
@@ -141,7 +176,7 @@ namespace Rebus.MySql.Subscriptions
                         SELECT address 
                         FROM {_tableName.QualifiedName} 
                         WHERE topic = @topic";
-                    command.Parameters.Add("topic", MySqlDbType.VarChar, _topicLength).Value = topic;
+                    command.Parameters.Add("topic", MySqlDbType.VarChar, TopicLength).Value = topic;
                     var subscriberAddresses = new List<string>();
                     using (var reader = await command.ExecuteReaderAsync().ConfigureAwait(false))
                     {
@@ -175,8 +210,8 @@ namespace Rebus.MySql.Subscriptions
                             @topic, 
                             @address
                         )";
-                    command.Parameters.Add("topic", MySqlDbType.VarChar, _topicLength).Value = topic;
-                    command.Parameters.Add("address", MySqlDbType.VarChar, _addressLength).Value = subscriberAddress;
+                    command.Parameters.Add("topic", MySqlDbType.VarChar, TopicLength).Value = topic;
+                    command.Parameters.Add("address", MySqlDbType.VarChar, AddressLength).Value = subscriberAddress;
                     await command.ExecuteNonQueryAsync().ConfigureAwait(false);
                 }
                 await connection.CompleteAsync().ConfigureAwait(false);
@@ -185,16 +220,16 @@ namespace Rebus.MySql.Subscriptions
 
         void CheckLengths(string topic, string subscriberAddress)
         {
-            if (topic.Length > _topicLength)
+            if (topic.Length > TopicLength)
             {
                 throw new ArgumentException(
-                    $"Cannot register '{subscriberAddress}' as a subscriber of '{topic}' because the length of the topic is greater than {_topicLength} (which is the current MAX length allowed by the current {_tableName} schema)");
+                    $"Cannot register '{subscriberAddress}' as a subscriber of '{topic}' because the length of the topic is greater than {TopicLength} (which is the current MAX length allowed by the current {_tableName} schema)");
             }
 
-            if (subscriberAddress.Length > _addressLength)
+            if (subscriberAddress.Length > AddressLength)
             {
                 throw new ArgumentException(
-                    $"Cannot register '{subscriberAddress}' as a subscriber of '{topic}' because the length of the subscriber address is greater than {_addressLength} (which is the current MAX length allowed by the current {_tableName} schema)");
+                    $"Cannot register '{subscriberAddress}' as a subscriber of '{topic}' because the length of the subscriber address is greater than {AddressLength} (which is the current MAX length allowed by the current {_tableName} schema)");
             }
         }
 
@@ -210,8 +245,8 @@ namespace Rebus.MySql.Subscriptions
                 using (var command = connection.CreateCommand())
                 {
                     command.CommandText = $@"DELETE FROM {_tableName.QualifiedName} WHERE topic = @topic AND address = @address";
-                    command.Parameters.Add("topic", MySqlDbType.VarChar, _topicLength).Value = topic;
-                    command.Parameters.Add("address", MySqlDbType.VarChar, _addressLength).Value = subscriberAddress;
+                    command.Parameters.Add("topic", MySqlDbType.VarChar, TopicLength).Value = topic;
+                    command.Parameters.Add("address", MySqlDbType.VarChar, AddressLength).Value = subscriberAddress;
                     await command.ExecuteNonQueryAsync().ConfigureAwait(false);
                 }
                 await connection.CompleteAsync().ConfigureAwait(false);

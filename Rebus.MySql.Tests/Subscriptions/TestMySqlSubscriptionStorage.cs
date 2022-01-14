@@ -86,8 +86,6 @@ namespace Rebus.MySql.Tests.Subscriptions
                 storage.EnsureTableIsCreated();
             }
 
-            storage.Initialize();
-
             return storage;
         }
     }

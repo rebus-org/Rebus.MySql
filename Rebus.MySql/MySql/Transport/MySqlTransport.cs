@@ -79,6 +79,7 @@ namespace Rebus.MySql.Transport
         bool _disposed;
         readonly TimeSpan _leaseInterval;
         readonly TimeSpan _leaseTolerance;
+        readonly bool _ensureTablesAreCreated;
         readonly bool _automaticLeaseRenewal;
         readonly TimeSpan _automaticLeaseRenewalInterval;
         readonly Func<string> _leasedByFactory;
@@ -117,6 +118,7 @@ namespace Rebus.MySql.Transport
             _leasedByFactory = options.LeasedByFactory ?? (() => Environment.MachineName);
             _leaseInterval = options.LeaseInterval ?? DefaultLeaseTime;
             _leaseTolerance = options.LeaseInterval ?? DefaultLeaseTolerance;
+            _ensureTablesAreCreated = options.EnsureTablesAreCreated;
 
             var automaticLeaseRenewalInterval = options.LeaseAutoRenewInterval;
 
@@ -168,15 +170,18 @@ namespace Rebus.MySql.Transport
 
         void EnsureTableIsCreated(TableName table)
         {
-            try
+            if (_ensureTablesAreCreated)
             {
-                InnerEnsureTableIsCreated(table);
-            }
-            catch (Exception)
-            {
-                // if it fails the first time, and if it's because of some kind of conflict,
-                // we should run it again and see if the situation has stabilized
-                InnerEnsureTableIsCreated(table);
+                try
+                {
+                    InnerEnsureTableIsCreated(table);
+                }
+                catch (Exception)
+                {
+                    // if it fails the first time, and if it's because of some kind of conflict,
+                    // we should run it again and see if the situation has stabilized
+                    InnerEnsureTableIsCreated(table);
+                }
             }
         }
 

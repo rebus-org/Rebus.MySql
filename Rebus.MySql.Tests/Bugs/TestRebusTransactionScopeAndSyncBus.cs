@@ -39,7 +39,6 @@ namespace Rebus.MySql.Tests.Bugs
 
             _subscriptionStorage = new MySqlSubscriptionStorage(connectionProvider, "Subscriptions", isCentralized: true, loggerFactory);
             _subscriptionStorage.EnsureTableIsCreated();
-            _subscriptionStorage.Initialize();
 
             _subscriberTransport = Using(new MySqlTransport(connectionProvider, "subscriber", loggerFactory, new TplAsyncTaskFactory(loggerFactory), new FakeRebusTime(), new MySqlTransportOptions(connectionProvider)));
             _subscriberTransport.EnsureTableIsCreated();
