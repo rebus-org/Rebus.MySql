@@ -29,12 +29,12 @@
 ## 3.0.0-b3
 * Remove MSSQL-specific index limitations - thanks [kendallb]
 
-## 3.0.0-b7
+## 3.0.0-b8
 * Removed leased based transport and made it the default due to how MySQL works with row locking - thanks [kendallb]
 * Change transaction isolation mode to REPEATABLE READ - thanks [kendallb]
 * Add distributed saga exclusive locks - thanks [kendallb]
 * Update Rebus dep to 7 prerelease - thanks [kendallb]
-
+* Avoid MySQL access during startup if not creating tables - thanks [kendallb]
 
 [kendallb]: https://github.com/kendallb
 [mvandevy]: https://github.com/mvandevy
