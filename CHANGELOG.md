@@ -17,7 +17,11 @@
 ## 2.0.1
 * Update to Rebus 6
 
+## 2.1.0
+* Update MySql.Data dep to 8.0.29 - thanks [dannythunder]
+
 
 [mvandevy]: https://github.com/mvandevy
 [renemadsen]: https://github.com/renemadsen
 [robvanpamel]: https://github.com/robvanpamel
+[dannythunder]: https://github.com/dannythunder
