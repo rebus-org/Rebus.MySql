@@ -5,7 +5,7 @@
     <AppDesignerFolder>Properties</AppDesignerFolder>
     <TargetFrameworks>net50</TargetFrameworks>
     <Authors>mookid8000, kendallb</Authors>
-    <Copyright>Copyright 2012</Copyright>
+    <Copyright>Copyright Rebus FM ApS 2012</Copyright>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\Rebus.MySql\Rebus.MySql.csproj" />
