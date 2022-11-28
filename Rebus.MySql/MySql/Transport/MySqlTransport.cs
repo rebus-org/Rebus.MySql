@@ -73,6 +73,7 @@ namespace Rebus.MySql.Transport
         readonly IDbConnectionProvider _connectionProvider;
         readonly IRebusTime _rebusTime;
         readonly TableName _receiveTableName;
+        readonly TableName _lockTableName;
         readonly ILog _log;
         readonly IAsyncTask _expiredMessagesCleanupTask;
         readonly bool _autoDeleteQueue;
@@ -107,6 +108,7 @@ namespace Rebus.MySql.Transport
             _rebusTime = rebusTime ?? throw new ArgumentNullException(nameof(rebusTime));
             _connectionProvider = connectionProvider ?? throw new ArgumentNullException(nameof(connectionProvider));
             _receiveTableName = inputQueueName != null ? TableName.Parse(inputQueueName) : null;
+            _lockTableName = inputQueueName != null ? TableName.Parse($"{inputQueueName}_locks") : null;
 
             _log = rebusLoggerFactory.GetLogger<MySqlTransport>();
 
@@ -166,6 +168,7 @@ namespace Rebus.MySql.Transport
         public void EnsureTableIsCreated()
         {
             EnsureTableIsCreated(_receiveTableName);
+            EnsureLockTableIsCreated(_lockTableName);
         }
 
         void EnsureTableIsCreated(TableName table)
@@ -277,19 +280,71 @@ namespace Rebus.MySql.Transport
             }
         }
 
+        void EnsureLockTableIsCreated(TableName table)
+        {
+            if (_ensureTablesAreCreated)
+            {
+                try
+                {
+                    InnerEnsureLockTableIsCreated(table);
+                }
+                catch (Exception)
+                {
+                    // if it fails the first time, and if it's because of some kind of conflict,
+                    // we should run it again and see if the situation has stabilized
+                    InnerEnsureLockTableIsCreated(table);
+                }
+            }
+        }
+
+        void InnerEnsureLockTableIsCreated(TableName table)
+        {
+            using (var connection = _connectionProvider.GetConnection())
+            {
+                var tableNames = connection.GetTableNames();
+                if (tableNames.Contains(table))
+                {
+                    _log.Info("Database already contains a table named {tableName} - will not create anything", table.QualifiedName);
+                }
+                else
+                {
+                    _log.Info("Table {tableName} does not exist - it will be created now", table.QualifiedName);
+
+                    connection.ExecuteCommands($@"
+                        CREATE TABLE {table.QualifiedName} (
+                            `message_id` BIGINT NOT NULL,
+                            `expiration` DATETIME(6) NOT NULL,
+                            PRIMARY KEY (`message_id`)
+                        );
+                        ----
+                        CREATE INDEX `expiration` ON {table.QualifiedName} (
+                            `expiration` ASC
+                        );");
+                }
+
+                connection.Complete();
+            }
+        }
+
         /// <summary>
         /// Checks if the table with the configured name exists - if it is, it will be dropped
         /// </summary>
         void EnsureTableIsDropped()
         {
+            EnsureTableIsDropped(_receiveTableName);
+            EnsureTableIsDropped(_lockTableName);
+        }
+
+        void EnsureTableIsDropped(TableName table)
+        {
             try
             {
-                InnerEnsureTableIsDropped(_receiveTableName);
+                InnerEnsureTableIsDropped(table);
             }
             catch
             {
                 // if it failed because of a collision between another thread doing the same thing, just try again once:
-                InnerEnsureTableIsDropped(_receiveTableName);
+                InnerEnsureTableIsDropped(table);
             }
         }
 
@@ -428,12 +483,15 @@ namespace Rebus.MySql.Transport
                 {
                     try
                     {
+                        var lockTableName = _lockTableName.QualifiedName;
+                        var tableName = _receiveTableName.QualifiedName;
                         TransportMessage transportMessage;
+                        long messageId;
+                        object orderingKey;
 
                         using (var command = connection.CreateCommand())
                         {
                             // Read the message and extra the data and ID if found
-                            var tableName = _receiveTableName.QualifiedName;
                             command.CommandText = $@"
                                 SELECT i.id,
                                        i.headers,
@@ -441,7 +499,9 @@ namespace Rebus.MySql.Transport
                                        i.ordering_key
                                 FROM {tableName} i 
                                     LEFT JOIN {tableName} k ON (i.ordering_key is not null AND k.leased_for = i.ordering_key)
-                                WHERE i.visible < now(6) AND
+                                    LEFT JOIN {lockTableName} l on (l.message_id = i.id)
+                                WHERE l.message_id is null AND
+                                      i.visible < now(6) AND
                                       i.expiration > now(6) AND
                                       (k.id is null or k.id = i.id) AND
                                       1 = CASE
@@ -456,8 +516,6 @@ namespace Rebus.MySql.Transport
                                 FOR UPDATE";
                             command.Parameters.Add("lease_tolerance_total_seconds", MySqlDbType.Int32).Value = (int)_leaseTolerance.TotalSeconds;
                             command.Parameters.Add("lease_tolerance_microseconds", MySqlDbType.Int32).Value = _leaseTolerance.Milliseconds * 1000;
-                            long messageId;
-                            object orderingKey;
                             using (var reader = command.ExecuteReader())
                             {
                                 transportMessage = ExtractTransportMessageFromReader(reader);
@@ -465,8 +523,32 @@ namespace Rebus.MySql.Transport
                                 messageId = (long)reader["id"];
                                 orderingKey = reader["ordering_key"];
                             }
+                        }
 
-                            // Mark the message as being processed within the transaction
+                        // To make sure nobody else is possibly processing this message, plug the message
+                        // ID into our lock table. If someone else got here first, this will fail with a duplicate entry
+                        // exception and we will try again in the exception handler below. This is NOT supposed to happen in a
+                        // transaction with FOR UPDATE, but we seem to be seeing this so we need this here. You can test it to make
+                        // sure it works by removing FOR UPDATE above as then all threads end up in here.
+                        using (var command = connection.CreateCommand())
+                        {
+                            command.CommandText = $@"
+                                INSERT INTO {lockTableName} (
+                                    `message_id`,
+                                    `expiration`
+                                ) VALUES (
+                                    @message_id,
+                                    date_add(date_add(now(6), INTERVAL @ttl_total_seconds SECOND), INTERVAL @ttl_microseconds MICROSECOND)
+                                );";
+                            command.Parameters.Add("message_id", MySqlDbType.Int64).Value = messageId;
+                            command.Parameters.Add("ttl_total_seconds", MySqlDbType.Int32).Value = (int)_leaseInterval.Add(_leaseTolerance).TotalSeconds;
+                            command.Parameters.Add("ttl_microseconds", MySqlDbType.Int32).Value = _leaseInterval.Add(_leaseTolerance).Milliseconds * 1000;
+                            command.ExecuteNonQuery();
+                        }
+
+                        // Mark the message as being processed within the transaction
+                        using (var command = connection.CreateCommand())
+                        {
                             command.CommandText = $@"
                                 UPDATE {tableName} 
                                 SET leased_until = date_add(date_add(now(6), INTERVAL @lease_total_seconds SECOND), INTERVAL @lease_microseconds MICROSECOND),
@@ -480,17 +562,18 @@ namespace Rebus.MySql.Transport
                             command.Parameters.Add("leased_by", MySqlDbType.VarChar, LeasedByColumnSize).Value = _leasedByFactory();
                             command.Parameters.Add("message_id", MySqlDbType.Int64).Value = messageId;
                             command.ExecuteNonQuery();
-
-                            // Now apply transaction semantics to clear the message later
-                            ApplyLeasedTransactionSemantics(context, messageId);
                         }
+
+                        // Now apply transaction semantics to clear the message later
+                        ApplyLeasedTransactionSemantics(context, messageId);
 
                         connection.Complete();
                         return Task.FromResult(transportMessage);
                     }
-                    catch (MySqlException exception) when (exception.ErrorCode == MySqlErrorCode.LockDeadlock)
+                    catch (MySqlException exception) when (exception.ErrorCode == MySqlErrorCode.LockDeadlock || exception.ErrorCode == MySqlErrorCode.DuplicateKeyEntry)
                     {
-                        // If we get a transaction deadlock here, keep trying until we succeed
+                        // If we get a transaction deadlock here, keep trying until we succeed. Also give up our time slice before we try again.
+                        Thread.Sleep(0);
                     }
                 }
             }
@@ -596,6 +679,11 @@ namespace Rebus.MySql.Transport
                             }
                             command.ExecuteNonQuery();
                         }
+                        using (var command = connection.CreateCommand())
+                        {
+                            command.CommandText = $@"DELETE FROM {_lockTableName.QualifiedName} WHERE message_id = {messageId}";
+                            command.ExecuteNonQuery();
+                        }
                         connection.Complete();
                         return;
                     }
@@ -622,6 +710,8 @@ namespace Rebus.MySql.Transport
                         using (var command = connection.CreateCommand())
                         {
                             command.CommandText = $@"DELETE FROM {_receiveTableName.QualifiedName} WHERE id = {messageId}";
+                            command.ExecuteNonQuery();
+                            command.CommandText = $@"DELETE FROM {_lockTableName.QualifiedName} WHERE message_id = {messageId}";
                             command.ExecuteNonQuery();
                         }
                         connection.Complete();
@@ -764,8 +854,37 @@ namespace Rebus.MySql.Transport
                         // If we got any messages to delete, clean them up in a single delete statement
                         if (messageIds.Count > 0)
                         {
-                            command.CommandText = $"DELETE FROM {_receiveTableName.QualifiedName} where id in ({string.Join(",", messageIds)})";
+                            var messageIdList = string.Join(",", messageIds);
+                            command.CommandText = $"DELETE FROM {_receiveTableName.QualifiedName} where id in ({messageIdList})";
                             affectedRows = await command.ExecuteNonQueryAsync().ConfigureAwait(false);
+                            command.CommandText = $"DELETE FROM {_lockTableName.QualifiedName} where message_id in ({messageIdList})";
+                            await command.ExecuteNonQueryAsync().ConfigureAwait(false);
+                        }
+                    }
+
+                    // We also need to clean up expired message locks in here, in case something crashed out while processing
+                    // the message queue
+                    using (var command = connection.CreateCommand())
+                    {
+                        command.CommandText = $@"
+                            SELECT message_id
+                            FROM {_lockTableName.QualifiedName}
+                            WHERE expiration < now()
+                            LIMIT 100";
+                        using (var reader = await command.ExecuteReaderAsync().ConfigureAwait(false))
+                        {
+                            while (await reader.ReadAsync().ConfigureAwait(false))
+                            {
+                                messageIds.Add((long)reader["message_id"]);
+                            }
+                        }
+
+                        // If we got any message locks to delete, clean them up in a single delete statement
+                        if (messageIds.Count > 0)
+                        {
+                            var messageIdList = string.Join(",", messageIds);
+                            command.CommandText = $"DELETE FROM {_lockTableName.QualifiedName} where message_id in ({messageIdList})";
+                            await command.ExecuteNonQueryAsync().ConfigureAwait(false);
                         }
                     }
 

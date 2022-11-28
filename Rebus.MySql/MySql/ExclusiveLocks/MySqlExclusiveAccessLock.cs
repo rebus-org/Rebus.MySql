@@ -49,7 +49,7 @@ namespace Rebus.MySql.ExclusiveLocks
         /// Constructor
         /// </summary>
         /// <param name="connectionProvider">A <see cref="IDbConnection"/> to obtain a database connection</param>
-        /// <param name="lockTableName">Name of the queue this transport is servicing</param>
+        /// <param name="lockTableName">Name of the table to store the locks in</param>
         /// <param name="rebusLoggerFactory">A <seealso cref="IRebusLoggerFactory"/> for building loggers</param>
         /// <param name="asyncTaskFactory">A <seealso cref="IAsyncTaskFactory"/> for creating periodic tasks</param>
         /// <param name="rebusTime">A <seealso cref="IRebusTime"/> to provide the current time</param>
@@ -67,7 +67,7 @@ namespace Rebus.MySql.ExclusiveLocks
 
             _rebusTime = rebusTime ?? throw new ArgumentNullException(nameof(rebusTime));
             _connectionProvider = connectionProvider ?? throw new ArgumentNullException(nameof(connectionProvider));
-            _lockTableName = lockTableName != null ? TableName.Parse(lockTableName) : null;
+            _lockTableName = TableName.Parse(lockTableName ?? throw new ArgumentNullException(nameof(lockTableName)));
             _log = rebusLoggerFactory.GetLogger<MySqlExclusiveAccessLock>();
             _lockExpirationTimeout = options.LockExpirationTimeout ?? DefaultLockExpirationTimeout;
 
@@ -82,8 +82,6 @@ namespace Rebus.MySql.ExclusiveLocks
         /// </summary>
         public void Initialize()
         {
-            if (_lockTableName == null) return;
-
             _expiredLocksCleanupTask.Start();
         }
 
