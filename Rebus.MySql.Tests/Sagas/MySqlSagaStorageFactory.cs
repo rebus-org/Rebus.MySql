@@ -5,44 +5,43 @@ using Rebus.MySql.Sagas.Serialization;
 using Rebus.Sagas;
 using Rebus.Tests.Contracts.Sagas;
 
-namespace Rebus.MySql.Tests.Sagas
+namespace Rebus.MySql.Tests.Sagas;
+
+[TestFixture, Category(Categories.MySql)]
+public class MySqlSagaStorageBasicLoadAndSaveAndFindOperations : BasicLoadAndSaveAndFindOperations<MySqlSagaStorageFactory> { }
+
+[TestFixture, Category(Categories.MySql)]
+public class MySqlSagaStorageConcurrencyHandling : ConcurrencyHandling<MySqlSagaStorageFactory> { }
+
+[TestFixture, Category(Categories.MySql)]
+public class MySqlSagaStorageSagaIntegrationTests : SagaIntegrationTests<MySqlSagaStorageFactory> { }
+
+public class MySqlSagaStorageFactory : ISagaStorageFactory
 {
-    [TestFixture, Category(Categories.MySql)]
-    public class MySqlSagaStorageBasicLoadAndSaveAndFindOperations : BasicLoadAndSaveAndFindOperations<MySqlSagaStorageFactory> { }
+    const string IndexTableName = "RebusSagaIndex";
+    const string DataTableName = "RebusSagaData";
 
-    [TestFixture, Category(Categories.MySql)]
-    public class MySqlSagaStorageConcurrencyHandling : ConcurrencyHandling<MySqlSagaStorageFactory> { }
-
-    [TestFixture, Category(Categories.MySql)]
-    public class MySqlSagaStorageSagaIntegrationTests : SagaIntegrationTests<MySqlSagaStorageFactory> { }
-
-    public class MySqlSagaStorageFactory : ISagaStorageFactory
+    public MySqlSagaStorageFactory()
     {
-        const string IndexTableName = "RebusSagaIndex";
-        const string DataTableName = "RebusSagaData";
+        CleanUp();
+    }
 
-        public MySqlSagaStorageFactory()
-        {
-            CleanUp();
-        }
+    public ISagaStorage GetSagaStorage()
+    {
+        var consoleLoggerFactory = new ConsoleLoggerFactory(true);
+        var connectionProvider = new DbConnectionProvider(MySqlTestHelper.ConnectionString, consoleLoggerFactory);
+        var sagaTypeNamingStrategy = new DefaultSagaTypeNamingStrategy();
+        var serializer = new DefaultSagaSerializer();
+        var storage = new MySqlSagaStorage(connectionProvider, DataTableName, IndexTableName, consoleLoggerFactory, sagaTypeNamingStrategy, serializer);
 
-        public ISagaStorage GetSagaStorage()
-        {
-            var consoleLoggerFactory = new ConsoleLoggerFactory(true);
-            var connectionProvider = new DbConnectionProvider(MySqlTestHelper.ConnectionString, consoleLoggerFactory);
-            var sagaTypeNamingStrategy = new DefaultSagaTypeNamingStrategy();
-            var serializer = new DefaultSagaSerializer();
-            var storage = new MySqlSagaStorage(connectionProvider, DataTableName, IndexTableName, consoleLoggerFactory, sagaTypeNamingStrategy, serializer);
+        storage.EnsureTablesAreCreated();
 
-            storage.EnsureTablesAreCreated();
+        return storage;
+    }
 
-            return storage;
-        }
-
-        public void CleanUp()
-        {
-            MySqlTestHelper.DropTable(IndexTableName);
-            MySqlTestHelper.DropTable(DataTableName);
-        }
+    public void CleanUp()
+    {
+        MySqlTestHelper.DropTable(IndexTableName);
+        MySqlTestHelper.DropTable(DataTableName);
     }
 }

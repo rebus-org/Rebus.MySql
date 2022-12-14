@@ -14,76 +14,75 @@ using Rebus.Tests.Contracts.Utilities;
 
 #pragma warning disable 1998
 
-namespace Rebus.MySql.Tests.Transport
+namespace Rebus.MySql.Tests.Transport;
+
+[TestFixture, Category(Categories.MySql)]
+public class TestMySqlTransportReceivePerformance : FixtureBase
 {
-    [TestFixture, Category(Categories.MySql)]
-    public class TestMySqlTransportReceivePerformance : FixtureBase
+    const string QueueName = "perftest";
+
+    static readonly string TableName = TestConfig.GetName("perftest");
+
+    protected override void SetUp()
     {
-        const string QueueName = "perftest";
+        MySqlTestHelper.DropTable(TableName);
+    }
 
-        static readonly string TableName = TestConfig.GetName("perftest");
+    [TestCase(1000, false, false)]
+    [TestCase(1000, true, false)]
+    [TestCase(1000, true, true)]
+    [TestCase(5000, false, false)]
+    public async Task CheckReceivePerformance(int messageCount, bool useOrderingKey, bool useDifferentOrderingKey)
+    {
+        var adapter = Using(new BuiltinHandlerActivator());
 
-        protected override void SetUp()
-        {
-            MySqlTestHelper.DropTable(TableName);
-        }
+        Configure.With(adapter)
+            .Logging(l => l.ColoredConsole(LogLevel.Warn))
+            .Transport(t => t.UseMySql(new MySqlTransportOptions(MySqlTestHelper.ConnectionString), QueueName))
+            .Options(o =>
+            {
+                o.SetNumberOfWorkers(0);
+                o.SetMaxParallelism(20);
+            })
+            .Start();
 
-        [TestCase(1000, false, false)]
-        [TestCase(1000, true, false)]
-        [TestCase(1000, true, true)]
-        [TestCase(5000, false, false)]
-        public async Task CheckReceivePerformance(int messageCount, bool useOrderingKey, bool useDifferentOrderingKey)
-        {
-            var adapter = Using(new BuiltinHandlerActivator());
+        Console.WriteLine($"Sending {messageCount} messages...");
 
-            Configure.With(adapter)
-                .Logging(l => l.ColoredConsole(LogLevel.Warn))
-                .Transport(t => t.UseMySql(new MySqlTransportOptions(MySqlTestHelper.ConnectionString), QueueName))
-                .Options(o =>
-                {
-                    o.SetNumberOfWorkers(0);
-                    o.SetMaxParallelism(20);
-                })
-                .Start();
+        var stopwatch = Stopwatch.StartNew();
 
-            Console.WriteLine($"Sending {messageCount} messages...");
+        // Use the same ordering key for each message to test the performance
+        await Task.WhenAll(Enumerable.Range(0, messageCount)
+            .Select(i => adapter.Bus.SendLocal($"THIS IS MESSAGE {i}", GetHeaders(useOrderingKey, useDifferentOrderingKey ? i : 0))));
 
-            var stopwatch = Stopwatch.StartNew();
+        var elapsedSeconds = stopwatch.Elapsed.TotalSeconds;
 
-            // Use the same ordering key for each message to test the performance
-            await Task.WhenAll(Enumerable.Range(0, messageCount)
-                .Select(i => adapter.Bus.SendLocal($"THIS IS MESSAGE {i}", GetHeaders(useOrderingKey, useDifferentOrderingKey ? i : 0))));
+        Console.WriteLine($"Inserted {messageCount} messages in {elapsedSeconds:0.0} s - that's {messageCount / elapsedSeconds:0.0} msg/s");
 
-            var elapsedSeconds = stopwatch.Elapsed.TotalSeconds;
+        var counter = Using(new SharedCounter(messageCount));
 
-            Console.WriteLine($"Inserted {messageCount} messages in {elapsedSeconds:0.0} s - that's {messageCount / elapsedSeconds:0.0} msg/s");
+        adapter.Handle<string>(async message => counter.Decrement());
 
-            var counter = Using(new SharedCounter(messageCount));
+        Console.WriteLine("Waiting for messages to be received...");
 
-            adapter.Handle<string>(async message => counter.Decrement());
+        stopwatch = Stopwatch.StartNew();
 
-            Console.WriteLine("Waiting for messages to be received...");
+        adapter.Bus.Advanced.Workers.SetNumberOfWorkers(3);
 
-            stopwatch = Stopwatch.StartNew();
+        counter.WaitForResetEvent(timeoutSeconds: messageCount / 50 + 5);
 
-            adapter.Bus.Advanced.Workers.SetNumberOfWorkers(3);
+        elapsedSeconds = stopwatch.Elapsed.TotalSeconds;
 
-            counter.WaitForResetEvent(timeoutSeconds: messageCount / 50 + 5);
+        Console.WriteLine($"{messageCount} messages received in {elapsedSeconds:0.0} s - that's {messageCount / elapsedSeconds:0.0} msg/s");
+    }
 
-            elapsedSeconds = stopwatch.Elapsed.TotalSeconds;
-
-            Console.WriteLine($"{messageCount} messages received in {elapsedSeconds:0.0} s - that's {messageCount / elapsedSeconds:0.0} msg/s");
-        }
-
-        private static Dictionary<string, string> GetHeaders(bool useOrderingKey, int counter)
-        {
-            var headers = useOrderingKey
-                ? new Dictionary<string, string>
-                {
-                    {MySqlTransport.OrderingKeyHeaderKey, $"ordering-key-{counter}"}
-                }
-                : null;
-            return headers;
-        }
+    private static Dictionary<string, string> GetHeaders(bool useOrderingKey, int counter)
+    {
+        var headers = useOrderingKey
+            ? new Dictionary<string, string>
+            {
+                {MySqlTransport.OrderingKeyHeaderKey, $"ordering-key-{counter}"}
+            }
+            : null;
+        return headers;
     }
 }
