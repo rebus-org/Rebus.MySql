@@ -3,31 +3,30 @@ using Rebus.MySql.Subscriptions;
 using Rebus.Subscriptions;
 using Rebus.Tests.Contracts.Subscriptions;
 
-namespace Rebus.MySql.Tests.Subscriptions
+namespace Rebus.MySql.Tests.Subscriptions;
+
+public class MySqlSubscriptionStorageFactory : ISubscriptionStorageFactory
 {
-    public class MySqlSubscriptionStorageFactory : ISubscriptionStorageFactory
+    const string TableName = "RebusSubscriptions";
+
+    public MySqlSubscriptionStorageFactory()
     {
-        const string TableName = "RebusSubscriptions";
+        MySqlTestHelper.DropAllTables();
+    }
 
-        public MySqlSubscriptionStorageFactory()
-        {
-            MySqlTestHelper.DropAllTables();
-        }
+    public ISubscriptionStorage Create()
+    {
+        var consoleLoggerFactory = new ConsoleLoggerFactory(true);
+        var connectionProvider = new DbConnectionProvider(MySqlTestHelper.ConnectionString, consoleLoggerFactory);
+        var storage = new MySqlSubscriptionStorage(connectionProvider, TableName, true, consoleLoggerFactory);
 
-        public ISubscriptionStorage Create()
-        {
-            var consoleLoggerFactory = new ConsoleLoggerFactory(true);
-            var connectionProvider = new DbConnectionProvider(MySqlTestHelper.ConnectionString, consoleLoggerFactory);
-            var storage = new MySqlSubscriptionStorage(connectionProvider, TableName, true, consoleLoggerFactory);
+        storage.EnsureTableIsCreated();
 
-            storage.EnsureTableIsCreated();
+        return storage;
+    }
 
-            return storage;
-        }
-
-        public void Cleanup()
-        {
-            MySqlTestHelper.DropTable(TableName);
-        }
+    public void Cleanup()
+    {
+        MySqlTestHelper.DropTable(TableName);
     }
 }

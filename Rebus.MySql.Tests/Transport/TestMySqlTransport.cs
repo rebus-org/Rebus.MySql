@@ -16,190 +16,189 @@ using Rebus.Threading.TaskParallelLibrary;
 using Rebus.Time;
 using Rebus.Transport;
 
-namespace Rebus.MySql.Tests.Transport
+namespace Rebus.MySql.Tests.Transport;
+
+[TestFixture, Category(Categories.MySql)]
+public class TestMySqlTransport : FixtureBase
 {
-    [TestFixture, Category(Categories.MySql)]
-    public class TestMySqlTransport : FixtureBase
+    const string QueueName = "input";
+    MySqlTransport _transport;
+    CancellationToken _cancellationToken;
+
+    protected override void SetUp()
     {
-        const string QueueName = "input";
-        MySqlTransport _transport;
-        CancellationToken _cancellationToken;
+        MySqlTestHelper.DropAllTables();
 
-        protected override void SetUp()
+        var rebusTime = new DefaultRebusTime();
+        var consoleLoggerFactory = new ConsoleLoggerFactory(false);
+        var connectionProvider = new DbConnectionProvider(MySqlTestHelper.ConnectionString, consoleLoggerFactory);
+        var asyncTaskFactory = new TplAsyncTaskFactory(consoleLoggerFactory);
+
+        _transport = new MySqlTransport(connectionProvider, QueueName, consoleLoggerFactory, asyncTaskFactory, rebusTime, new MySqlTransportOptions(connectionProvider));
+        _transport.EnsureTableIsCreated();
+
+        Using(_transport);
+
+        _transport.Initialize();
+
+        _cancellationToken = new CancellationTokenSource().Token;
+    }
+
+    [Test]
+    public async Task ReceivesSentMessageWhenTransactionIsCommitted()
+    {
+        using (var scope = new RebusTransactionScope())
         {
-            MySqlTestHelper.DropAllTables();
+            await _transport.Send(QueueName, RecognizableMessage(), scope.TransactionContext);
 
-            var rebusTime = new DefaultRebusTime();
-            var consoleLoggerFactory = new ConsoleLoggerFactory(false);
-            var connectionProvider = new DbConnectionProvider(MySqlTestHelper.ConnectionString, consoleLoggerFactory);
-            var asyncTaskFactory = new TplAsyncTaskFactory(consoleLoggerFactory);
-
-            _transport = new MySqlTransport(connectionProvider, QueueName, consoleLoggerFactory, asyncTaskFactory, rebusTime, new MySqlTransportOptions(connectionProvider));
-            _transport.EnsureTableIsCreated();
-
-            Using(_transport);
-
-            _transport.Initialize();
-
-            _cancellationToken = new CancellationTokenSource().Token;
+            await scope.CompleteAsync();
         }
 
-        [Test]
-        public async Task ReceivesSentMessageWhenTransactionIsCommitted()
+        using (var scope = new RebusTransactionScope())
         {
-            using (var scope = new RebusTransactionScope())
-            {
-                await _transport.Send(QueueName, RecognizableMessage(), scope.TransactionContext);
+            var transportMessage = await _transport.Receive(scope.TransactionContext, _cancellationToken);
 
-                await scope.CompleteAsync();
-            }
+            await scope.CompleteAsync();
 
-            using (var scope = new RebusTransactionScope())
-            {
-                var transportMessage = await _transport.Receive(scope.TransactionContext, _cancellationToken);
+            AssertMessageIsRecognized(transportMessage);
+        }
+    }
 
-                await scope.CompleteAsync();
+    [Test]
+    public async Task DoesNotReceiveSentMessageWhenTransactionIsNotCommitted()
+    {
+        using (var scope = new RebusTransactionScope())
+        {
+            await _transport.Send(QueueName, RecognizableMessage(), scope.TransactionContext);
 
-                AssertMessageIsRecognized(transportMessage);
-            }
+            // deliberately skip this:
+            //await context.Complete();
         }
 
-        [Test]
-        public async Task DoesNotReceiveSentMessageWhenTransactionIsNotCommitted()
+        using (var scope = new RebusTransactionScope())
         {
-            using (var scope = new RebusTransactionScope())
-            {
-                await _transport.Send(QueueName, RecognizableMessage(), scope.TransactionContext);
+            var transportMessage = await _transport.Receive(scope.TransactionContext, _cancellationToken);
 
-                // deliberately skip this:
-                //await context.Complete();
-            }
+            Assert.That(transportMessage, Is.Null);
+        }
+    }
 
-            using (var scope = new RebusTransactionScope())
-            {
-                var transportMessage = await _transport.Receive(scope.TransactionContext, _cancellationToken);
-
-                Assert.That(transportMessage, Is.Null);
-            }
+    [Test]
+    public async Task IgnoresMessagesWithSameOrderingKeyAsLeasedMessages()
+    {
+        using (var scope = new RebusTransactionScope())
+        {
+            // Send three messages, the first two using the same ordering key, one without an ordering key
+            // and the last one with a different key
+            const string orderingKey = "ordering-key";
+            const string differentOrderingKey = "differentOrderingKey";
+            await _transport.Send(QueueName, RecognizableMessage(1, orderingKey), scope.TransactionContext);
+            await _transport.Send(QueueName, RecognizableMessage(2, orderingKey), scope.TransactionContext);
+            await _transport.Send(QueueName, RecognizableMessage(3), scope.TransactionContext);
+            await _transport.Send(QueueName, RecognizableMessage(4, differentOrderingKey), scope.TransactionContext);
+            await scope.CompleteAsync();
         }
 
-        [Test]
-        public async Task IgnoresMessagesWithSameOrderingKeyAsLeasedMessages()
+        // We should get message 1, skip 2, then 3 and 4 while inside the transaction
+        using (var scope = new RebusTransactionScope())
         {
-            using (var scope = new RebusTransactionScope())
-            {
-                // Send three messages, the first two using the same ordering key, one without an ordering key
-                // and the last one with a different key
-                const string orderingKey = "ordering-key";
-                const string differentOrderingKey = "differentOrderingKey";
-                await _transport.Send(QueueName, RecognizableMessage(1, orderingKey), scope.TransactionContext);
-                await _transport.Send(QueueName, RecognizableMessage(2, orderingKey), scope.TransactionContext);
-                await _transport.Send(QueueName, RecognizableMessage(3), scope.TransactionContext);
-                await _transport.Send(QueueName, RecognizableMessage(4, differentOrderingKey), scope.TransactionContext);
-                await scope.CompleteAsync();
-            }
+            var transportMessage1 = await _transport.Receive(scope.TransactionContext, _cancellationToken);
+            var transportMessage2 = await _transport.Receive(scope.TransactionContext, _cancellationToken);
+            var transportMessage3 = await _transport.Receive(scope.TransactionContext, _cancellationToken);
+            var transportMessage4 = await _transport.Receive(scope.TransactionContext, _cancellationToken);
 
-            // We should get message 1, skip 2, then 3 and 4 while inside the transaction
-            using (var scope = new RebusTransactionScope())
-            {
-                var transportMessage1 = await _transport.Receive(scope.TransactionContext, _cancellationToken);
-                var transportMessage2 = await _transport.Receive(scope.TransactionContext, _cancellationToken);
-                var transportMessage3 = await _transport.Receive(scope.TransactionContext, _cancellationToken);
-                var transportMessage4 = await _transport.Receive(scope.TransactionContext, _cancellationToken);
+            await scope.CompleteAsync();
 
-                await scope.CompleteAsync();
-
-                AssertMessageIsRecognized(transportMessage1, 1);
-                AssertMessageIsRecognized(transportMessage2, 3);
-                AssertMessageIsRecognized(transportMessage3, 4);
-                Assert.IsNull(transportMessage4);
-            }
-
-            // Now that message one is completed, we should then receive message 2
-            using (var scope = new RebusTransactionScope())
-            {
-                var transportMessage = await _transport.Receive(scope.TransactionContext, _cancellationToken);
-
-                await scope.CompleteAsync();
-
-                AssertMessageIsRecognized(transportMessage, 2);
-            }
+            AssertMessageIsRecognized(transportMessage1, 1);
+            AssertMessageIsRecognized(transportMessage2, 3);
+            AssertMessageIsRecognized(transportMessage3, 4);
+            Assert.IsNull(transportMessage4);
         }
 
-        [TestCase(1000)]
-        public async Task LotsOfAsyncStuffGoingDown(int numberOfMessages)
+        // Now that message one is completed, we should then receive message 2
+        using (var scope = new RebusTransactionScope())
         {
-            var receivedMessages = 0L;
-            var messageIds = new ConcurrentDictionary<int, int>();
+            var transportMessage = await _transport.Receive(scope.TransactionContext, _cancellationToken);
 
-            Console.WriteLine("Sending {0} messages", numberOfMessages);
+            await scope.CompleteAsync();
 
-            await Task.WhenAll(Enumerable.Range(0, numberOfMessages)
-                .Select(async i =>
+            AssertMessageIsRecognized(transportMessage, 2);
+        }
+    }
+
+    [TestCase(1000)]
+    public async Task LotsOfAsyncStuffGoingDown(int numberOfMessages)
+    {
+        var receivedMessages = 0L;
+        var messageIds = new ConcurrentDictionary<int, int>();
+
+        Console.WriteLine("Sending {0} messages", numberOfMessages);
+
+        await Task.WhenAll(Enumerable.Range(0, numberOfMessages)
+            .Select(async i =>
+            {
+                using var scope = new RebusTransactionScope();
+                await _transport.Send(QueueName, RecognizableMessage(i), scope.TransactionContext);
+                await scope.CompleteAsync();
+                messageIds[i] = 0;
+            }));
+
+        Console.WriteLine("Receiving {0} messages", numberOfMessages);
+
+        using (new Timer(_ => Console.WriteLine("Received: {0} msgs", receivedMessages), null, 0, 1000))
+        {
+            var stopwatch = Stopwatch.StartNew();
+
+            while (Interlocked.Read(ref receivedMessages) < numberOfMessages && stopwatch.Elapsed < TimeSpan.FromMinutes(2))
+            {
+                await Task.WhenAll(Enumerable.Range(0, 10).Select(async __ =>
                 {
                     using var scope = new RebusTransactionScope();
-                    await _transport.Send(QueueName, RecognizableMessage(i), scope.TransactionContext);
+                    var msg = await _transport.Receive(scope.TransactionContext, _cancellationToken);
                     await scope.CompleteAsync();
-                    messageIds[i] = 0;
-                }));
 
-            Console.WriteLine("Receiving {0} messages", numberOfMessages);
-
-            using (new Timer(_ => Console.WriteLine("Received: {0} msgs", receivedMessages), null, 0, 1000))
-            {
-                var stopwatch = Stopwatch.StartNew();
-
-                while (Interlocked.Read(ref receivedMessages) < numberOfMessages && stopwatch.Elapsed < TimeSpan.FromMinutes(2))
-                {
-                    await Task.WhenAll(Enumerable.Range(0, 10).Select(async __ =>
+                    if (msg != null)
                     {
-                        using var scope = new RebusTransactionScope();
-                        var msg = await _transport.Receive(scope.TransactionContext, _cancellationToken);
-                        await scope.CompleteAsync();
-
-                        if (msg != null)
-                        {
-                            Interlocked.Increment(ref receivedMessages);
-                            var id = int.Parse(msg.Headers["id"]);
-                            messageIds.AddOrUpdate(id, 1, (_, existing) => existing + 1);
-                        }
-                    }));
-                }
-
-                await Task.Delay(3000);
+                        Interlocked.Increment(ref receivedMessages);
+                        var id = int.Parse(msg.Headers["id"]);
+                        messageIds.AddOrUpdate(id, 1, (_, existing) => existing + 1);
+                    }
+                }));
             }
 
-            Assert.That(messageIds.Keys.OrderBy(k => k).ToArray(), Is.EqualTo(Enumerable.Range(0, numberOfMessages).ToArray()));
+            await Task.Delay(3000);
+        }
 
-            var kvpsDifferentThanOne = messageIds.Where(kvp => kvp.Value != 1).ToList();
+        Assert.That(messageIds.Keys.OrderBy(k => k).ToArray(), Is.EqualTo(Enumerable.Range(0, numberOfMessages).ToArray()));
 
-            if (kvpsDifferentThanOne.Any())
-            {
-                Assert.Fail(@"Oh no! the following IDs were not received exactly once:
+        var kvpsDifferentThanOne = messageIds.Where(kvp => kvp.Value != 1).ToList();
+
+        if (kvpsDifferentThanOne.Any())
+        {
+            Assert.Fail(@"Oh no! the following IDs were not received exactly once:
 
 {0}",
-    string.Join(Environment.NewLine, kvpsDifferentThanOne.Select(kvp => $"   {kvp.Key}: {kvp.Value}")));
-            }
+                string.Join(Environment.NewLine, kvpsDifferentThanOne.Select(kvp => $"   {kvp.Key}: {kvp.Value}")));
         }
+    }
 
-        void AssertMessageIsRecognized(TransportMessage transportMessage, int id = 0)
-        {
-            Assert.That(transportMessage.Headers.GetValue("recognizzle"), Is.EqualTo("hej"));
-            Assert.That(transportMessage.Headers.GetValue("id"), Is.EqualTo(id.ToString()));
-        }
+    void AssertMessageIsRecognized(TransportMessage transportMessage, int id = 0)
+    {
+        Assert.That(transportMessage.Headers.GetValue("recognizzle"), Is.EqualTo("hej"));
+        Assert.That(transportMessage.Headers.GetValue("id"), Is.EqualTo(id.ToString()));
+    }
 
-        static TransportMessage RecognizableMessage(int id = 0, string orderingKey = null)
+    static TransportMessage RecognizableMessage(int id = 0, string orderingKey = null)
+    {
+        var headers = new Dictionary<string, string>
         {
-            var headers = new Dictionary<string, string>
-            {
-                {"recognizzle", "hej"},
-                {"id", id.ToString()}
-            };
-            if (orderingKey != null)
-            {
-                headers[MySqlTransport.OrderingKeyHeaderKey] = orderingKey;
-            }
-            return new TransportMessage(headers, new byte[] { 1, 2, 3 });
+            {"recognizzle", "hej"},
+            {"id", id.ToString()}
+        };
+        if (orderingKey != null)
+        {
+            headers[MySqlTransport.OrderingKeyHeaderKey] = orderingKey;
         }
+        return new TransportMessage(headers, new byte[] { 1, 2, 3 });
     }
 }

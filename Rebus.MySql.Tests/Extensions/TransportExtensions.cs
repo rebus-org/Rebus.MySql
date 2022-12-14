@@ -4,31 +4,30 @@ using Rebus.Messages;
 using Rebus.MySql.Transport;
 using Rebus.Transport;
 
-namespace Rebus.MySql.Tests.Extensions
+namespace Rebus.MySql.Tests.Extensions;
+
+static class TransportExtensions
 {
-    static class TransportExtensions
+    public static IEnumerable<TransportMessage> GetMessages(this MySqlTransport transport)
     {
-        public static IEnumerable<TransportMessage> GetMessages(this MySqlTransport transport)
+        var messages = new List<TransportMessage>();
+
+        AsyncHelpers.RunSync(async () =>
         {
-            var messages = new List<TransportMessage>();
-
-            AsyncHelpers.RunSync(async () =>
+            while (true)
             {
-                while (true)
+                using (var scope = new RebusTransactionScope())
                 {
-                    using (var scope = new RebusTransactionScope())
-                    {
-                        var transportMessage = await transport.Receive(scope.TransactionContext, CancellationToken.None);
-                        if (transportMessage == null) break;
+                    var transportMessage = await transport.Receive(scope.TransactionContext, CancellationToken.None);
+                    if (transportMessage == null) break;
 
-                        messages.Add(transportMessage);
+                    messages.Add(transportMessage);
 
-                        await scope.CompleteAsync();
-                    }
+                    await scope.CompleteAsync();
                 }
-            });
+            }
+        });
 
-            return messages;
-        }
+        return messages;
     }
 }

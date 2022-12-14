@@ -1,16 +1,15 @@
 ﻿using System;
 
-namespace Rebus.MySql.Sagas
+namespace Rebus.MySql.Sagas;
+
+/// <summary>
+/// Implementation of <seealso cref="ISagaTypeNamingStrategy"/> which uses legacy type naming; simply returning the name of the class
+/// </summary>
+public class DefaultSagaTypeNamingStrategy : ISagaTypeNamingStrategy
 {
-    /// <summary>
-    /// Implementation of <seealso cref="ISagaTypeNamingStrategy"/> which uses legacy type naming; simply returning the name of the class
-    /// </summary>
-    public class DefaultSagaTypeNamingStrategy : ISagaTypeNamingStrategy
+    /// <inheritdoc />
+    public string GetSagaTypeName(Type sagaDataType, int maximumLength)
     {
-        /// <inheritdoc />
-        public string GetSagaTypeName(Type sagaDataType, int maximumLength)
-        {
-            return sagaDataType.Name;
-        }
+        return sagaDataType.Name;
     }
 }

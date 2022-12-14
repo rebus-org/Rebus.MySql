@@ -7,45 +7,44 @@ using Rebus.Config;
 using Rebus.Tests.Contracts;
 using Rebus.Tests.Contracts.Transports;
 
-namespace Rebus.MySql.Tests.Transport.Contract.Factories
+namespace Rebus.MySql.Tests.Transport.Contract.Factories;
+
+public class MySqlBusFactory : IBusFactory
 {
-    public class MySqlBusFactory : IBusFactory
+    readonly List<IDisposable> _stuffToDispose = new List<IDisposable>();
+
+    public MySqlBusFactory()
     {
-        readonly List<IDisposable> _stuffToDispose = new List<IDisposable>();
+        MySqlTestHelper.DropAllTables();
+    }
 
-        public MySqlBusFactory()
-        {
-            MySqlTestHelper.DropAllTables();
-        }
+    public IBus GetBus<TMessage>(string inputQueueAddress, Func<TMessage, Task> handler)
+    {
+        var builtinHandlerActivator = new BuiltinHandlerActivator();
 
-        public IBus GetBus<TMessage>(string inputQueueAddress, Func<TMessage, Task> handler)
-        {
-            var builtinHandlerActivator = new BuiltinHandlerActivator();
+        builtinHandlerActivator.Handle(handler);
 
-            builtinHandlerActivator.Handle(handler);
+        var tableName = "messages" + TestConfig.Suffix;
 
-            var tableName = "messages" + TestConfig.Suffix;
+        MySqlTestHelper.DropTable(tableName);
 
-            MySqlTestHelper.DropTable(tableName);
+        var bus = Configure.With(builtinHandlerActivator)
+            .Transport(t => t.UseMySql(new MySqlTransportOptions(MySqlTestHelper.ConnectionString), inputQueueAddress))
+            .Options(o =>
+            {
+                o.SetNumberOfWorkers(10);
+                o.SetMaxParallelism(10);
+            })
+            .Start();
 
-            var bus = Configure.With(builtinHandlerActivator)
-                .Transport(t => t.UseMySql(new MySqlTransportOptions(MySqlTestHelper.ConnectionString), inputQueueAddress))
-                .Options(o =>
-                {
-                    o.SetNumberOfWorkers(10);
-                    o.SetMaxParallelism(10);
-                })
-                .Start();
+        _stuffToDispose.Add(bus);
 
-            _stuffToDispose.Add(bus);
+        return bus;
+    }
 
-            return bus;
-        }
-
-        public void Cleanup()
-        {
-            _stuffToDispose.ForEach(d => d.Dispose());
-            _stuffToDispose.Clear();
-        }
+    public void Cleanup()
+    {
+        _stuffToDispose.ForEach(d => d.Dispose());
+        _stuffToDispose.Clear();
     }
 }
