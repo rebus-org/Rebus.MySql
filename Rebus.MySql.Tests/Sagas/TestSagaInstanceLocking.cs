@@ -96,7 +96,10 @@ public class TestSagaInstanceLocking : FixtureBase
 
         await Task.Delay(TimeSpan.FromSeconds(System.Diagnostics.Debugger.IsAttached ? 30 : 3));
 
-        Assert.That(loggerFactory.Count(l => l.Level >= LogLevel.Warn), Is.EqualTo(0), "Didn't expect any logging with level WARNING or above");
+        Assert.That(loggerFactory.Count(l => l.Level >= LogLevel.Warn), Is.EqualTo(0), 
+            $@"Didn't expect any logging with level WARNING or above - got this:
+
+{string.Join(Environment.NewLine, loggerFactory)}");
     }
 
     class ProcessTheseThings
