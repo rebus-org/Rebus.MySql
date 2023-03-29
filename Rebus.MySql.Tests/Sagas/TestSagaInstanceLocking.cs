@@ -92,7 +92,7 @@ public class TestSagaInstanceLocking : FixtureBase
             })
             .Start();
 
-        await sagaActivator.Bus.SendLocal(new ProcessTheseThings(Enumerable.Range(0, 10).Select(no => $"THING-{no}")));
+        await sagaActivator.Bus.SendLocal(new ProcessTheseThings(Enumerable.Range(0, 10).Select(no => $"THING-{no}").ToHashSet()));
 
         await Task.Delay(TimeSpan.FromSeconds(System.Diagnostics.Debugger.IsAttached ? 30 : 3));
 
@@ -104,7 +104,7 @@ public class TestSagaInstanceLocking : FixtureBase
 
     class ProcessTheseThings
     {
-        public ProcessTheseThings(IEnumerable<string> things) => Things = new HashSet<string>(things);
+        public ProcessTheseThings(HashSet<string> things) => Things = new HashSet<string>(things);
 
         public HashSet<string> Things { get; }
     }
