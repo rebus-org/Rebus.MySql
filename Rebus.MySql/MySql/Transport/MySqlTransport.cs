@@ -23,7 +23,7 @@ namespace Rebus.MySql.Transport;
 /// </summary>
 public class MySqlTransport : ITransport, IInitializable, IDisposable
 {
-    static readonly HeaderSerializer HeaderSerializer = new HeaderSerializer();
+    static readonly HeaderSerializer HeaderSerializer = new();
 
     /// <summary>
     /// When a message is sent to this address, it will be deferred into the future!
@@ -322,7 +322,8 @@ public class MySqlTransport : ITransport, IInitializable, IDisposable
 
         outboundMessageBuffer.Enqueue(new AddressedTransportMessage
         {
-            DestinationAddress = GetDestinationAddressToUse(destinationAddress, message), Message = message
+            DestinationAddress = GetDestinationAddressToUse(destinationAddress, message),
+            Message = message
         });
 
         return Task.CompletedTask;
@@ -356,7 +357,7 @@ public class MySqlTransport : ITransport, IInitializable, IDisposable
                 }
             }
 
-            context.OnCommitted(SendOutgoingMessages);
+            context.OnCommit(SendOutgoingMessages);
 
             return outgoingMessages;
         });
@@ -525,35 +526,35 @@ public class MySqlTransport : ITransport, IInitializable, IDisposable
             renewal = new AutomaticLeaseRenewer(this, _receiveTableName.QualifiedName, messageId, _connectionProvider, _automaticLeaseRenewalInterval, _leaseInterval);
         }
 
-        context.OnAborted(
-            ctx =>
+        context.OnNack(_ =>
+        {
+            renewal?.Dispose();
+            try
             {
-                renewal?.Dispose();
-                try
-                {
-                    UpdateLease(_connectionProvider, _receiveTableName.QualifiedName, messageId, null);
-                }
-                catch (Exception ex)
-                {
-                    _log.Error(ex, "While Resetting Lease");
-                }
-            });
-
-        context.OnCommitted(
-            ctx =>
+                UpdateLease(_connectionProvider, _receiveTableName.QualifiedName, messageId, null);
+            }
+            catch (Exception ex)
             {
-                renewal?.Dispose();
-                try
-                {
-                    DeleteMessage(messageId);
-                }
-                catch (Exception ex)
-                {
-                    _log.Error(ex, "While Deleting Message");
-                }
+                _log.Error(ex, "While Resetting Lease");
+            }
 
-                return Task.CompletedTask;
-            });
+            return Task.CompletedTask;
+        });
+
+        context.OnAck(_ =>
+        {
+            renewal?.Dispose();
+            try
+            {
+                DeleteMessage(messageId);
+            }
+            catch (Exception ex)
+            {
+                _log.Error(ex, "While Deleting Message");
+            }
+
+            return Task.CompletedTask;
+        });
     }
 
     /// <summary>

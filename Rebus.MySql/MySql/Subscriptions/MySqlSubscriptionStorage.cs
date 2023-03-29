@@ -166,7 +166,7 @@ public class MySqlSubscriptionStorage : ISubscriptionStorage
     /// <summary>
     /// Gets all destination addresses for the given topic
     /// </summary>
-    public async Task<string[]> GetSubscriberAddresses(string topic)
+    public async Task<IReadOnlyList<string>> GetSubscriberAddresses(string topic)
     {
         using (var connection = await _connectionProvider.GetConnectionAsync())
         {

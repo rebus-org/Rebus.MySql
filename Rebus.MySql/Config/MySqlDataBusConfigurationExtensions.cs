@@ -5,6 +5,7 @@ using Rebus.Logging;
 using Rebus.MySql;
 using Rebus.MySql.DataBus;
 using Rebus.Time;
+// ReSharper disable UnusedMember.Global
 
 namespace Rebus.Config;
 
