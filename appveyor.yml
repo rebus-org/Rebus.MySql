@@ -2,8 +2,8 @@ image: Visual Studio 2022
 
 shallow_clone: true
 
-services:
-  - mysql
+init:
+  - ps: Start-Service MySQL80
 
 cache:
   - packages -> **\packages.config
@@ -11,7 +11,6 @@ cache:
 
 environment:
   REBUS_MYSQL: "Server=localhost;Database=rebus2_test;Uid=root;Pwd=Password12!;sslmode=none;"
-  max_allowed_packet: "1073741824"
 
 before_build:
   - ps: $env:MYSQL_PWD="Password12!"
