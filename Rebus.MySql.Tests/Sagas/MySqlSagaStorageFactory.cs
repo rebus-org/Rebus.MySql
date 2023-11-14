@@ -16,7 +16,7 @@ namespace Rebus.MySql.Tests.Sagas
         public ISagaStorage GetSagaStorage()
         {
             var mySqlSagaStorage = new MySqlSagaStorage(MySqlTestHelper.ConnectionHelper, "saga_data", "saga_index", new ConsoleLoggerFactory(false));
-            mySqlSagaStorage.EnsureTablesAreCreated();
+            mySqlSagaStorage.EnsureTablesAreCreated().Wait();
             return mySqlSagaStorage;
         }
 
