@@ -1,9 +1,9 @@
-image: Visual Studio 2019
+image: Visual Studio 2022
 
 shallow_clone: true
 
-services:
-  - mysql
+init:
+  - ps: Start-Service MySQL80
 
 cache:
   - packages -> **\packages.config
@@ -14,10 +14,12 @@ environment:
 
 before_build:
   - ps: $env:MYSQL_PWD="Password12!"
-  - ps: $cmd = '"C:\Program Files\MySQL\MySQL Server 5.7\bin\mysql" -e "create database rebus2_test;" --user=root'
+  - ps: $cmd = '"C:\Program Files\MySQL\MySQL Server 8.0\bin\mysql" -e "create database rebus2_test; set global net_buffer_length=1000000; set global max_allowed_packet=1000000000;" --user=root'
   - ps: iex "& $cmd"
   - appveyor-retry dotnet restore -v Minimal
 
 build_script:
   - dotnet build Rebus.MySql -c Release 
-  - dotnet build Rebus.MySql.Tests -c Release 
+
+test_script:
+  - dotnet test Rebus.MySql.Tests -c Release 

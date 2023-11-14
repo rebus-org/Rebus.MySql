@@ -5,7 +5,7 @@
     <AppDesignerFolder>Properties</AppDesignerFolder>
     <RootNamespace>Rebus</RootNamespace>
     <AssemblyName>Rebus.MySql</AssemblyName>
-    <TargetFrameworks>net452;netstandard2.0</TargetFrameworks>
+    <TargetFrameworks>net462;netstandard2.0</TargetFrameworks>
     <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
     <Authors>mvandevy</Authors>
     <PackageProjectUrl>https://rebus.fm/what-is-rebus/</PackageProjectUrl>
@@ -47,7 +47,7 @@
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Rebus" Version="6.0.0" />
-    <PackageReference Include="MySql.Data" Version="8.0.29" />
+    <PackageReference Include="MySql.Data" Version="8.0.33" />
     <PackageReference Include="System.Data.SqlClient" Version="4.8.1" />
   </ItemGroup>
 </Project>

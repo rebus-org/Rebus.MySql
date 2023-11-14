@@ -149,7 +149,7 @@ namespace Rebus.MySql.Transport
         }
 
         /// <summary>
-        /// Called whene the transport needs to process a newly received message.
+        /// Called when the transport needs to process a newly received message.
         /// </summary>
         /// <param name="context"></param>
         /// <param name="cancellationToken"></param>
@@ -162,33 +162,44 @@ namespace Rebus.MySql.Transport
 
                 TransportMessage receivedTransportMessage;
 
-                using (var selectCommand = connection.CreateCommand())
+                while (true)
                 {
-                    selectCommand.CommandText = $@"
+                    using (var selectCommand = connection.CreateCommand())
+                    {
+                        selectCommand.CommandText = $@"
 UPDATE {_tableName} SET process_id = @processId WHERE recipient = @recipient AND `visible` < now() AND `expiration` > now() AND process_id IS NULL ORDER BY `priority` ASC, `id` ASC LIMIT 1;
 SELECT `id`, `headers`, `body` FROM {_tableName} WHERE process_id = @processId ORDER BY ID LIMIT 1;
-DELETE FROM {_tableName} WHERE process_id = @processId;";
+DELETE FROM {_tableName} WHERE process_id = @processId ORDER BY ID LIMIT 1;";
 
-                    selectCommand.Parameters.Add(selectCommand.CreateParameter("recipient", DbType.String, _inputQueueName));
-                    selectCommand.Parameters.Add(selectCommand.CreateParameter("processId", DbType.Guid, Guid.NewGuid()));
+                        selectCommand.Parameters.Add(selectCommand.CreateParameter("recipient", DbType.String,
+                            _inputQueueName));
+                        selectCommand.Parameters.Add(selectCommand.CreateParameter("processId", DbType.Guid,
+                            Guid.NewGuid()));
 
-                    try
-                    {
-                        using (var reader = await selectCommand.ExecuteReaderAsync(cancellationToken))
+                        try
                         {
-                            if (!await reader.ReadAsync(cancellationToken)) return null;
+                            using (var reader = await selectCommand.ExecuteReaderAsync(cancellationToken))
+                            {
+                                if (!await reader.ReadAsync(cancellationToken)) return null;
 
-                            var headers = reader["headers"];
-                            var headersDictionary = HeaderSerializer.Deserialize((byte[])headers);
-                            var body = (byte[])reader["body"];
+                                var headers = reader["headers"];
+                                var headersDictionary = HeaderSerializer.Deserialize((byte[])headers);
+                                var body = (byte[])reader["body"];
 
-                            receivedTransportMessage = new TransportMessage(headersDictionary, body);
+                                receivedTransportMessage = new TransportMessage(headersDictionary, body);
+                            }
+
+                            break;
                         }
-                    }
-                    catch (SqlException sqlException) when (sqlException.Number == OperationCancelledNumber)
-                    {
-                        // ADO.NET does not throw the right exception when the task gets cancelled - therefore we need to do this:
-                        throw new TaskCanceledException("Receive operation was cancelled", sqlException);
+                        catch (MySqlException exception) when (exception.Number == (int)MySqlErrorCode.LockDeadlock)
+                        {
+                            // If we get a transaction deadlock here, keep trying until we succeed
+                        }
+                        catch (SqlException sqlException) when (sqlException.Number == OperationCancelledNumber)
+                        {
+                            // ADO.NET does not throw the right exception when the task gets cancelled - therefore we need to do this:
+                            throw new TaskCanceledException("Receive operation was cancelled", sqlException);
+                        }
                     }
                 }
 
