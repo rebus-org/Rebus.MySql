@@ -169,7 +169,7 @@ namespace Rebus.MySql.Transport
                         selectCommand.CommandText = $@"
 UPDATE {_tableName} SET process_id = @processId WHERE recipient = @recipient AND `visible` < now() AND `expiration` > now() AND process_id IS NULL ORDER BY `priority` ASC, `id` ASC LIMIT 1;
 SELECT `id`, `headers`, `body` FROM {_tableName} WHERE process_id = @processId ORDER BY ID LIMIT 1;
-DELETE FROM {_tableName} WHERE process_id = @processId;";
+DELETE FROM {_tableName} WHERE process_id = @processId ORDER BY ID LIMIT 1;";
 
                         selectCommand.Parameters.Add(selectCommand.CreateParameter("recipient", DbType.String,
                             _inputQueueName));
