@@ -13,11 +13,6 @@ public class MySqlSnapshotStorageFactory : ISagaSnapshotStorageFactory
 {
     const string TableName = "SagaSnapshots";
 
-    public MySqlSnapshotStorageFactory()
-    {
-        MySqlTestHelper.DropTable(TableName);
-    }
-
     public ISagaSnapshotStorage Create()
     {
         var consoleLoggerFactory = new ConsoleLoggerFactory(true);
@@ -54,4 +49,6 @@ public class MySqlSnapshotStorageFactory : ISagaSnapshotStorageFactory
         await connection.CompleteAsync();
         return storedCopies;
     }
+
+    public void Dispose() => MySqlTestHelper.DropTable(TableName);
 }

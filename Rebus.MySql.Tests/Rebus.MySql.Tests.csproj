@@ -7,7 +7,7 @@
     </PropertyGroup>
     <ItemGroup>
         <ProjectReference Include="..\Rebus.MySql\Rebus.MySql.csproj" />
-        <PackageReference Include="Rebus.Tests.Contracts" Version="8.0.0-alpha01" />
+        <PackageReference Include="Rebus.Tests.Contracts" Version="8.0.0-alpha09" />
         <PackageReference Include="microsoft.net.test.sdk" Version="17.5.0" />
         <PackageReference Include="nunit" Version="3.13.3" />
         <PackageReference Include="nunit3testadapter" Version="4.4.2">
