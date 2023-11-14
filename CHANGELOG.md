@@ -20,7 +20,10 @@
 ## 2.1.0
 * Update MySql.Data dep to 8.0.29 - thanks [dannythunder]
 
+## 2.2.0
+* Update MySql.Data dep to 8.0.33 - thanks [huysentruitw]
 
+[huysentruitw]: https://github.com/huysentruitw
 [mvandevy]: https://github.com/mvandevy
 [renemadsen]: https://github.com/renemadsen
 [robvanpamel]: https://github.com/robvanpamel
