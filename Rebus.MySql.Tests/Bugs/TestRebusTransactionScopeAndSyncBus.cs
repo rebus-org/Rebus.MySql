@@ -14,6 +14,8 @@ using Rebus.Tests.Contracts;
 using Rebus.Tests.Contracts.Utilities;
 using Rebus.Threading.TaskParallelLibrary;
 using Rebus.Transport;
+using DisposableCallback = Rebus.Tests.Contracts.DisposableCallback;
+
 // ReSharper disable MethodHasAsyncOverload
 // ReSharper disable UnusedVariable
 

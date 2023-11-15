@@ -36,8 +36,8 @@
 * Update Rebus dep to 7 prerelease - thanks [kendallb]
 * Avoid MySQL access during startup if not creating tables - thanks [kendallb]
 
-## 4.0.0-alpha03
-* Update MySqlConnector to 2.2.7
+## 4.0.0
+* Update MySqlConnector to 2.3.0
 * Update to Rebus 8
 
 
