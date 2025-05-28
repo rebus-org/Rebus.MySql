@@ -2,7 +2,7 @@
     <PropertyGroup>
         <OutputType>Library</OutputType>
         <RootNamespace>Rebus</RootNamespace>
-        <TargetFrameworks>netstandard2.0</TargetFrameworks>
+        <TargetFrameworks>netstandard2.0;net6.0</TargetFrameworks>
         <LangVersion>11</LangVersion>
         <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
         <Authors>mookid8000, kendallb</Authors>
@@ -26,8 +26,12 @@
           <PackagePath>\</PackagePath>
         </None>
     </ItemGroup>
-    <ItemGroup>
+
+	<ItemGroup Condition="'$(TargetFramework)' == 'netstandard2.0'">
         <PackageReference Include="Microsoft.CSharp" Version="4.7.0" />
+	</ItemGroup>
+
+    <ItemGroup>
         <PackageReference Include="MySqlConnector" Version="2.3.0" />
         <PackageReference Include="Rebus" Version="8.0.1" />
     </ItemGroup>
